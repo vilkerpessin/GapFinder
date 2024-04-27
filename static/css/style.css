@@ -1,0 +1,91 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background-color: #1e2a78; /* Azul Cobalto */
+    color: #ffcc00; /* Amarelo Ocre */
+}
+
+.logo {
+    height: 150px; /* Ajuste conforme necessário */
+}
+
+.container {
+    width: 80%;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.button {
+    background-color: #1e2a78; /* Azul Cobalto */
+    color: #ffcc00; /* Amarelo Ocre */
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 20px;
+    display: inline-block;
+    text-decoration: none;
+}
+
+.button:hover {
+    background-color: #ffcc00;
+    color: #1e2a78;
+}
+
+.scrollable {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #1e2a78;
+    color: #ffcc00;
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.title-highlight {
+    text-align: center;
+    margin: 20px 0;
+    font-size: 24px; /* Ajuste o tamanho da fonte conforme necessário */
+    color: #1e2a78; /* Azul Cobalto */
+    font-weight: bold;
+}
+#loading {
+    text-align: center;
+    padding: 20px;
+}
+
+#loading p {
+    color: #333;
+    font-size: 16px;
+}
+
+.loading-gif {
+    width: 300px;
+    height: auto;
+}

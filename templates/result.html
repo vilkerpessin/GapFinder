@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Results - GapFinder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <img src="{{ url_for('static', filename='images/logoGapFinder.png') }}" alt="GapFinder Logo" class="logo">
+        <h1>GapFinder Results</h1>
+    </div>
+    <div class="container">
+        <div class="scrollable">
+            <table>
+                <tr>
+                    <th>File</th>
+                    <th>DOI</th>
+                    <th>Author</th>
+                    <th>Title</th>
+                    <th>Keywords</th>
+                    <th>Page</th>
+                    <th>Paragraph</th>
+                    <th>Insight</th> <!-- Updated column name from Score to Insight -->
+                </tr>
+                {% for row in data %}
+                <tr>
+                    <td>{{ row.file }}</td>
+                    <td>{{ row.doi }}</td>
+                    <td>{{ row.author }}</td>
+                    <td>{{ row.title }}</td>
+                    <td>{{ row.keywords }}</td>
+                    <td>{{ row.page }}</td>
+                    <td>{{ row.paragraph }}</td>
+                    <td>{{ '%0.2f' % row.insight }}</td> <!-- Updated variable name and formatted to two decimal places -->
+                </tr>
+                {% endfor %}
+            </table>
+            {% if not data %}
+            <p>No data available to display. Please upload files and try again.</p>
+            {% endif %}
+        </div>
+        <a href="/download" class="button">Download Results</a>
+        <a href="/" class="button">Back to Home</a>
+    </div>
+</body>
+</html>

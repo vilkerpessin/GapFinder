@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GapFinder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <img src="{{ url_for('static', filename='images/logoGapFinder.png') }}" alt="GapFinder Logo" class="logo">
+        <h1>GapFinder</h1>        
+    </div>
+    <div class="container">
+        <div class="title-highlight">Research</div>
+        <p>Explore new horizons with GapFinder: your innovative tool for extracting research gaps from PDF files, unveiling unexplored areas of scientific research, and pushing the frontier of knowledge.</p>
+        {% if session.get('resultados') %}
+        <p>Last upload successful. You can download your results or upload new files.</p>
+        {% endif %}
+        <form action="/process" method="post" enctype="multipart/form-data">
+            <label for="pdf_files" class="button">Upload PDF File</label>
+            <input type="file" name="pdf_files" id="pdf_files" multiple style="display: none;">
+            <button type="submit" class="button">Find Gaps</button>
+        </form> 
+        
+        <div id="loading" style="display:none;">
+            <img src="{{ url_for('static', filename='images/loading.gif') }}" alt="Loading..." class="loading-gif" />
+            <p>Please wait... This might take a while due to the AI processing.</p>
+        </div>
+
+        {% if request.args.get('error') %}
+        <div class="error-message">
+            <p>{{ request.args.get('error') }}</p>
+        </div>
+        {% endif %}        
+    </div>
+     
+    <script>
+        document.querySelector('form').onsubmit = function() {
+            document.getElementById('loading').style.display = 'block';
+        };
+    </script>
+</body>
+</html>
