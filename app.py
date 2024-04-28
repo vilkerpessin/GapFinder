@@ -34,6 +34,7 @@ def extract_metadata(stream):
         "num_pages": num_pages
     }
 
+
 def analyze_sentiment(text):
     blob = TextBlob(text)
     return blob.sentiment.polarity
