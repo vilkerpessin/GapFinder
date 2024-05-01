@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, send_file, session, redirect,
 from flask_session import Session
 from PyPDF2 import PdfReader
 from pdfminer.high_level import extract_text
-from textblob import TextBlob
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import re
 import io
 import pandas as pd
@@ -34,18 +34,19 @@ def extract_metadata(stream):
         "num_pages": num_pages
     }
 
-
-def analyze_sentiment(text):
-    blob = TextBlob(text)
-    return blob.sentiment.polarity
+def analyze_sentiment_vader(text):
+    analyzer = SentimentIntensityAnalyzer()
+    sentiment = analyzer.polarity_scores(text)
+    return sentiment['compound']  # Retorna o score composto que é um resumo do sentimento
 
 def find_keywords_and_extract_paragraphs(text, keywords):
     pages = text.split('\f')
+    keyword_regex = r'\b(' + '|'.join([re.escape(kw) for kw in keywords]) + r')\b'
     results = []
     for page_num, page in enumerate(pages):
         for paragraph in page.split('\n\n'):
-            if any(keyword.lower() in paragraph.lower() for keyword in keywords):
-                insight_score = analyze_sentiment(paragraph)
+            if re.search(keyword_regex, paragraph, re.IGNORECASE):
+                insight_score = analyze_sentiment_vader(paragraph)
                 results.append((page_num + 1, paragraph, insight_score))
     return results
 
@@ -81,7 +82,7 @@ def process_files():
                 "keywords": metadata.get("keywords", ""),
                 "page": page,
                 "paragraph": paragraph,
-                "insight": insight  # Renamed Score to Insight
+                "insight": insight
             })
 
     session['resultados'] = data
