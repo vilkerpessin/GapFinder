@@ -38,18 +38,29 @@ def extract_metadata(stream):
         "num_pages": num_pages
     }
 
+_sentiment_analyzer = SentimentIntensityAnalyzer()
+
+_GAP_KEYWORDS = [
+    "limitation", "limitação", "research gap", "lacuna", "gap", "shortage", "insufficiency", "lack", "deficiency",
+    "inadequacy", "unexplored", "under-researched", "insufficiently studied", "neglected", "unexamined", "sparse",
+    "incomplete", "under-theorized", "unaddressed", "overlooked", "underestimated", "uncharted", "knowledge gap"
+]
+
+_keyword_pattern = re.compile(
+    r'\b(' + '|'.join([re.escape(kw) for kw in _GAP_KEYWORDS]) + r')\b',
+    re.IGNORECASE
+)
+
 def analyze_sentiment_vader(text):
-    analyzer = SentimentIntensityAnalyzer()
-    sentiment = analyzer.polarity_scores(text)
+    sentiment = _sentiment_analyzer.polarity_scores(text)
     return sentiment['compound']  # Retorna o score composto que é um resumo do sentimento
 
-def find_keywords_and_extract_paragraphs(text, keywords):
+def find_keywords_and_extract_paragraphs(text):
     pages = text.split('\f')
-    keyword_regex = r'\b(' + '|'.join([re.escape(kw) for kw in keywords]) + r')\b'
     results = []
     for page_num, page in enumerate(pages):
         for paragraph in page.split('\n\n'):
-            if re.search(keyword_regex, paragraph, re.IGNORECASE):
+            if _keyword_pattern.search(paragraph):
                 insight_score = analyze_sentiment_vader(paragraph)
                 results.append((page_num + 1, paragraph, insight_score))
     return results
@@ -63,19 +74,39 @@ def index():
 def process_files():
     files = request.files.getlist('pdf_files')
     data = []
-    keywords = [
-        "limitation", "limitação", "research gap", "lacuna", "gap", "shortage", "insufficiency", "lack", "deficiency",
-        "inadequacy", "unexplored", "under-researched", "insufficiently studied", "neglected", "unexamined", "sparse",
-        "incomplete", "under-theorized", "unaddressed", "overlooked", "underestimated", "uncharted", "knowledge gap"
-    ]
+    
+    MAX_FILE_SIZE = 20 * 1024 * 1024
+    MAX_TOTAL_SIZE = 50 * 1024 * 1024
+    total_size = 0
 
     for file in files:
         if not file.filename.endswith('.pdf'):
             continue
-        file_stream = io.BytesIO(file.read())
-        text = extract_text(file_stream)
-        metadata = extract_metadata(file_stream)
-        paragraphs = find_keywords_and_extract_paragraphs(text, keywords)
+
+        file_content = file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            return f"Error: File '{file.filename}' is too large ({file_size / 1024 / 1024:.1f}MB). Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB per file.", 400
+        
+        total_size += file_size
+        if total_size > MAX_TOTAL_SIZE:
+            return f"Error: Total file size exceeds {MAX_TOTAL_SIZE / 1024 / 1024}MB limit. Please upload fewer or smaller files.", 400
+        
+        file_stream = io.BytesIO(file_content)
+
+        try:
+            text = extract_text(file_stream)
+        except Exception as e:
+            continue
+
+        file_stream.seek(0)
+        try:
+            metadata = extract_metadata(file_stream)
+        except Exception as e:
+            continue
+
+        paragraphs = find_keywords_and_extract_paragraphs(text)
 
         for page, paragraph, insight in paragraphs:
             data.append({
@@ -101,7 +132,6 @@ def download():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Sheet1')
-        writer.book.close()
     output.seek(0)
     return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='results.xlsx')
 
