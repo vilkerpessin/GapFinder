@@ -1,3 +1,8 @@
 flask_session/
 __pycache__/
 instance/
+venv/
+.env
+.coverage
+.pytest_cache/
+htmlcov/
