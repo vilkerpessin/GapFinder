@@ -1,8 +1,9 @@
 from flask import Flask, render_template, request, send_file, session, redirect, url_for
 from flask_session import Session
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from pdfminer.high_level import extract_text
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from cachelib.file import FileSystemCache
 import re
 import io
 import pandas as pd
@@ -11,13 +12,13 @@ import os
 app = Flask(__name__)
 
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
-
 app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_TYPE"] = "cachelib"
+app.config["SESSION_CACHELIB"] = FileSystemCache(cache_dir="flask_session")
 Session(app)
 
 def extract_doi(text):
-    pattern_doi = r"10.\d{4,9}/[-._;()/:A-Z0-9]+"
+    pattern_doi = r"10\.\d{4,9}/[-._;()/:A-Z0-9]+"
     match = re.search(pattern_doi, text, re.IGNORECASE)
     return match.group(0) if match else None
 

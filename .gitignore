@@ -3,3 +3,6 @@ __pycache__/
 instance/
 venv/
 .env
+.coverage
+.pytest_cache/
+htmlcov/
