@@ -14,11 +14,6 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 
 ## Instalação
 
-### Requisitos
-
-- Python 3.11+
-- pip
-
 ### Setup Local
 
 ```bash
@@ -53,22 +48,14 @@ python app.py
 
 Acesse: `http://localhost:5000`
 
+Para rodar os testes: `pytest tests/ -v`
+
 ## Uso
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
 2. O sistema identifica parágrafos contendo palavras-chave relacionadas a lacunas de pesquisa
 3. Cada parágrafo recebe um "Insight Score" calculado via análise de sentimento
 4. Os resultados podem ser visualizados na interface ou exportados para Excel
-
-## Testes
-
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Executar com cobertura
-pytest tests/ --cov=app --cov-report=html
-```
 
 ## Variáveis de Ambiente
 
@@ -84,14 +71,7 @@ pytest tests/ --cov=app --cov-report=html
 
 ## Contribuindo
 
-Este projeto é open source e está aberto a contribuições.
-Se você deseja colaborar:
-
-1. Faça um fork do repositório
-2. Crie uma branch para sua feature (`git checkout -b feature/nome-feature`)
-3. Commit suas mudanças (`git commit -m 'Adiciona funcionalidade X'`)
-4. Push para a branch (`git push origin feature/nome-feature`)
-5. Abra um Pull Request
+Este projeto é open source e está aberto a contribuições. Veja o arquivo [CONTRIBUTING.md](CONTRIBUTING.md) para instruções detalhadas.
 
 
 ## Licença
