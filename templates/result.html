@@ -11,6 +11,30 @@
         <h1>GapFinder Results</h1>
     </div>
     <div class="container">
+        {% if data %}
+        <div class="results-summary">
+            <h2>Analysis Summary</h2>
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <div class="stat-value">{{ data | length }}</div>
+                    <div class="stat-label">Insights Extracted</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">{{ data | map(attribute='file') | unique | list | length }}</div>
+                    <div class="stat-label">Files Processed</div>
+                </div>
+            </div>
+            <div class="insight-legend">
+                <p><strong>Insight Score Legend:</strong></p>
+                <div class="legend-items">
+                    <span class="legend-item negative">-1.0 to -0.1: Gap / Challenge</span>
+                    <span class="legend-item neutral">-0.1 to 0.1: Context / Background</span>
+                    <span class="legend-item positive">0.1 to 1.0: Achievement / Refinement</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="scrollable">
             <table>
                 <tr>
@@ -31,8 +55,20 @@
                     <td>{{ row.title }}</td>
                     <td>{{ row.keywords }}</td>
                     <td>{{ row.page }}</td>
-                    <td>{{ row.paragraph }}</td>
-                    <td>{{ '%0.2f' % row.insight }}</td> <!-- Updated variable name and formatted to two decimal places -->
+                    <td class="paragraph-cell">
+                        <div class="paragraph-text">{{ row.paragraph[:200] }}{% if row.paragraph | length > 200 %}<span class="ellipsis">...</span><button class="read-more-btn" onclick="this.previousElementSibling.style.display='none'; this.nextElementSibling.style.display='inline'; this.style.display='none';">Read more</button><span class="full-text" style="display:none;">{{ row.paragraph[200:] }}</span>{% endif %}
+                        </div>
+                    </td>
+                    <td class="insight-cell">
+                        {% set score = row.insight %}
+                        {% if score >= 0.1 %}
+                            <span class="insight-badge positive">{{ '%0.2f' % score }}</span>
+                        {% elif score <= -0.1 %}
+                            <span class="insight-badge negative">{{ '%0.2f' % score }}</span>
+                        {% else %}
+                            <span class="insight-badge neutral">{{ '%0.2f' % score }}</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </table>
