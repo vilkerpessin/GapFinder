@@ -14,14 +14,25 @@
         <div class="title-highlight">Research</div>
         <p>Explore new horizons with GapFinder: your innovative tool for extracting research gaps from PDF files, unveiling unexplored areas of scientific research, and pushing the frontier of knowledge.</p>
         {% if session.get('resultados') %}
-        <p>Last upload successful. You can download your results or upload new files.</p>
+        <div class="success-message">
+            <p>✓ Last upload processed successfully! You can download results or upload new files.</p>
+        </div>
         {% endif %}
         <form action="/process" method="post" enctype="multipart/form-data">
             <label for="pdf_files" class="button">Upload PDF File</label>
             <input type="file" name="pdf_files" id="pdf_files" multiple style="display: none;">
             <button type="submit" class="button">Find Gaps</button>
-        </form> 
-        
+        </form>
+
+        <div id="file-preview" class="file-preview" style="display: none;">
+            <h3>Selected Files:</h3>
+            <ul id="file-list"></ul>
+            <p class="file-info">
+                <span id="file-count">0</span> file(s) |
+                <span id="file-size">0</span> MB total
+            </p>
+        </div>
+
         <div id="loading" style="display:none;">
             <img src="{{ url_for('static', filename='images/loading.gif') }}" alt="Loading..." class="loading-gif" />
             <p>Please wait... This might take a while due to the AI processing.</p>
@@ -35,7 +46,63 @@
     </div>
      
     <script>
-        document.querySelector('form').onsubmit = function() {
+        const fileInput = document.getElementById('pdf_files');
+        const filePreview = document.getElementById('file-preview');
+        const fileList = document.getElementById('file-list');
+        const fileCount = document.getElementById('file-count');
+        const fileSize = document.getElementById('file-size');
+        const form = document.querySelector('form');
+
+        const MAX_FILE_SIZE = 20 * 1024 * 1024;
+        const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
+
+        fileInput.addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+
+            if (files.length === 0) {
+                filePreview.style.display = 'none';
+                return;
+            }
+
+            fileList.innerHTML = '';
+            let totalSize = 0;
+
+            files.forEach(file => {
+                const li = document.createElement('li');
+                const sizeInMB = (file.size / 1024 / 1024).toFixed(2);
+                li.className = 'file-item';
+
+                if (!file.name.endsWith('.pdf')) {
+                    li.className += ' file-item-invalid';
+                    li.innerHTML = `<span class="file-name">${file.name}</span>
+                                   <span class="file-warning">(not a PDF)</span>`;
+                } else if (file.size > MAX_FILE_SIZE) {
+                    li.className += ' file-item-warning';
+                    li.innerHTML = `<span class="file-name">${file.name}</span>
+                                   <span class="file-size">${sizeInMB} MB</span>
+                                   <span class="file-warning">(exceeds 20MB)</span>`;
+                } else {
+                    li.innerHTML = `<span class="file-name">${file.name}</span>
+                                   <span class="file-size">${sizeInMB} MB</span>`;
+                }
+
+                fileList.appendChild(li);
+                totalSize += file.size;
+            });
+
+            fileCount.textContent = files.length;
+            fileSize.textContent = (totalSize / 1024 / 1024).toFixed(2);
+
+            if (totalSize > MAX_TOTAL_SIZE) {
+                fileSize.className = 'size-warning';
+            } else {
+                fileSize.className = '';
+            }
+
+            filePreview.style.display = 'block';
+        });
+
+        form.onsubmit = function() {
             document.getElementById('loading').style.display = 'block';
         };
     </script>
