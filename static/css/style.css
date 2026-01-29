@@ -44,7 +44,7 @@ body {
 }
 
 .scrollable {
-    max-height: 400px;
+    max-height: 600px;
     overflow-y: auto;
 }
 
@@ -348,11 +348,30 @@ tr:nth-child(even) {
     }
 
     .scrollable {
+        max-height: 500px;
         overflow-x: auto;
     }
 
     table {
         min-width: 800px;
+    }
+
+    .drop-zone {
+        padding: 25px 15px;
+        border-style: solid;
+        border-width: 1px;
+    }
+
+    .drop-zone-icon {
+        font-size: 36px;
+    }
+
+    .drop-zone-text {
+        font-size: 13px;
+    }
+
+    .drop-zone-text:first-of-type {
+        font-size: 14px;
     }
 }
 
@@ -384,4 +403,76 @@ tr:nth-child(even) {
     .stat-value {
         font-size: 28px;
     }
+
+    .drop-zone {
+        padding: 20px 10px;
+    }
+
+    .drop-zone-icon {
+        font-size: 32px;
+        margin-bottom: 5px;
+    }
+
+    .drop-zone-text {
+        font-size: 12px;
+        margin: 5px 0;
+    }
+}
+
+.drop-zone {
+    padding: 40px 20px;
+    border: 2px dashed #1e2a78;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    margin-bottom: 15px;
+}
+
+.drop-zone:hover {
+    border-color: #ffcc00;
+    background-color: #fffef0;
+}
+
+.drop-zone.drag-active {
+    border-color: #4caf50;
+    background-color: #e8f5e9;
+    box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+    border-style: solid;
+    border-width: 2px;
+}
+
+.drop-zone:focus-visible {
+    outline: 3px solid #1e2a78;
+    outline-offset: 2px;
+}
+
+.drop-zone-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.drop-zone-text {
+    color: #666;
+    font-size: 14px;
+    margin: 8px 0;
+}
+
+.drop-zone-text:first-of-type {
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+}
+
+.drop-zone-link {
+    color: #1e2a78;
+    font-weight: bold;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.drop-zone-link:hover {
+    color: #ffcc00;
 }
