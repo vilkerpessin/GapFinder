@@ -1,3 +1,4 @@
+import gc
 import io
 import os
 
@@ -85,6 +86,9 @@ def process_files():
                 "insight": insight
             })
 
+        del file_content, file_stream, text, paragraphs
+
+    gc.collect()
     session['resultados'] = data
     return render_template('result.html', data=data)
 
