@@ -1,9 +1,18 @@
+import io
 import sys
 import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from pdf_extractor import extract_doi
+from pdf_extractor import extract_doi, extract_metadata, extract_text_by_page
+
+
+class TestModuleImports:
+    """Verify all PDF extraction dependencies are available."""
+
+    def test_fitz_import(self):
+        import fitz
+        assert hasattr(fitz, 'open')
 
 
 class TestExtractDOI:

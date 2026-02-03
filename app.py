@@ -7,8 +7,8 @@ from flask import Flask, render_template, request, send_file, session
 from flask_session import Session
 from cachelib.file import FileSystemCache
 
-from pdf_extractor import extract_metadata, extract_text_from_pdf
-from gap_analyzer import analyze_text
+from pdf_extractor import extract_metadata, extract_text_by_page
+from gap_analyzer import analyze_pages
 
 
 app = Flask(__name__)
@@ -62,17 +62,16 @@ def process_files():
         file_stream = io.BytesIO(file_content)
 
         try:
-            text = extract_text_from_pdf(file_stream)
+            metadata = extract_metadata(file_stream)
         except Exception:
             continue
 
         file_stream.seek(0)
         try:
-            metadata = extract_metadata(file_stream)
+            pages = extract_text_by_page(file_stream)
+            paragraphs = analyze_pages(pages)
         except Exception:
             continue
-
-        paragraphs = analyze_text(text)
 
         for page, paragraph, insight in paragraphs:
             data.append({
@@ -86,7 +85,7 @@ def process_files():
                 "insight": insight
             })
 
-        del file_content, file_stream, text, paragraphs
+        del file_content, file_stream, paragraphs
 
     gc.collect()
     session['resultados'] = data

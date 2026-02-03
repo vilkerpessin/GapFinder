@@ -19,9 +19,8 @@ nltk==3.8.1
 numpy==1.26.4
 packaging==24.0
 pandas==2.2.2
-pdfminer.six==20231228
 pycparser==2.22
-pypdf==4.0.2
+PyMuPDF==1.24.14
 python-dateutil==2.9.0.post0
 pytz==2024.1
 regex==2024.4.16
