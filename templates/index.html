@@ -43,9 +43,17 @@
             </p>
         </div>
 
-        <div id="loading" style="display:none;">
-            <img src="{{ url_for('static', filename='images/loading.gif') }}" alt="Loading..." class="loading-gif" />
-            <p>Please wait... This might take a while due to the AI processing.</p>
+        <div id="progress-container" style="display:none;">
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p id="progress-message">Starting analysis...</p>
+            <p class="progress-note">Please wait... This might take a while due to the AI processing.</p>
+        </div>
+
+        <div id="error-container" style="display:none;">
+            <p id="error-message"></p>
+            <a href="/" class="button">Try Again</a>
         </div>
 
         {% if request.args.get('error') %}
@@ -164,9 +172,87 @@
             });
         }
 
-        form.onsubmit = function() {
-            document.getElementById('loading').style.display = 'block';
-        };
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressMessage = document.getElementById('progress-message');
+            const errorContainer = document.getElementById('error-container');
+            const submitBtn = form.querySelector('button[type="submit"]');
+
+            // Hide form elements, show progress
+            dropZone.style.display = 'none';
+            submitBtn.style.display = 'none';
+            mobileUploadBtn.style.display = 'none';
+            filePreview.style.display = 'none';
+            progressContainer.style.display = 'block';
+
+            let totalFiles = 1;
+            let currentFile = 0;
+
+            fetch('/upload', { method: 'POST', body: formData })
+                .then(function(response) {
+                    if (!response.ok) return response.json().then(function(err) { throw new Error(err.error); });
+                    return response.json();
+                })
+                .then(function(data) {
+                    var eventSource = new EventSource('/progress/' + data.job_id);
+
+                    eventSource.addEventListener('progress', function(e) {
+                        progressMessage.textContent = e.data;
+
+                        var fileMatch = e.data.match(/Processing file (\d+) of (\d+)/);
+                        if (fileMatch) {
+                            currentFile = parseInt(fileMatch[1]);
+                            totalFiles = parseInt(fileMatch[2]);
+                            var filePct = (currentFile - 1) / totalFiles * 100;
+                            progressBar.style.width = filePct + '%';
+                        }
+
+                        var scoreMatch = e.data.match(/Scored (\d+)\/(\d+) paragraphs \((\d+)%\)/);
+                        if (scoreMatch) {
+                            var batchPct = parseInt(scoreMatch[3]);
+                            var overallPct = ((currentFile - 1) / totalFiles * 100) + (batchPct / totalFiles);
+                            progressBar.style.width = Math.min(overallPct, 99) + '%';
+                        }
+                    });
+
+                    eventSource.addEventListener('complete', function(e) {
+                        eventSource.close();
+                        progressBar.style.width = '100%';
+                        progressMessage.textContent = 'Done! Loading results...';
+                        var result = JSON.parse(e.data);
+                        window.location.href = '/result/' + result.result_id;
+                    });
+
+                    eventSource.addEventListener('error', function(e) {
+                        if (e.data) {
+                            eventSource.close();
+                            progressContainer.style.display = 'none';
+                            errorContainer.style.display = 'block';
+                            document.getElementById('error-message').textContent = 'Error: ' + e.data;
+                        }
+                    });
+
+                    eventSource.onerror = function() {
+                        setTimeout(function() {
+                            if (eventSource.readyState === EventSource.CLOSED) {
+                                progressContainer.style.display = 'none';
+                                errorContainer.style.display = 'block';
+                                document.getElementById('error-message').textContent =
+                                    'Connection lost. Your files may still be processing. Try refreshing.';
+                            }
+                        }, 5000);
+                    };
+                })
+                .catch(function(error) {
+                    progressContainer.style.display = 'none';
+                    errorContainer.style.display = 'block';
+                    document.getElementById('error-message').textContent = error.message;
+                });
+        });
     </script>
 </body>
 </html>
