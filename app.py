@@ -34,6 +34,7 @@ def process_files():
     files = request.files.getlist('pdf_files')
     data = []
     total_size = 0
+    files_analyzed = 0
 
     for file in files:
         if not file.filename.endswith('.pdf'):
@@ -73,6 +74,8 @@ def process_files():
         except Exception:
             continue
 
+        files_analyzed += 1
+
         for page, paragraph, insight in paragraphs:
             data.append({
                 "file": file.filename,
@@ -88,8 +91,14 @@ def process_files():
         del file_content, file_stream, paragraphs
 
     gc.collect()
+    files_with_gaps = len(set(row["file"] for row in data))
     session['resultados'] = data
-    return render_template('result.html', data=data)
+    return render_template(
+        'result.html',
+        data=data,
+        files_analyzed=files_analyzed,
+        files_with_gaps=files_with_gaps
+    )
 
 
 @app.route('/download')

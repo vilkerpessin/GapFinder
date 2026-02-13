@@ -9,7 +9,7 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 - Upload e processamento de múltiplos PDFs simultaneamente
 - Extração automática de metadados (DOI, autor, título)
 - Detecção de palavras-chave relacionadas a lacunas de pesquisa
-- Análise de sentimento (VADER) para avaliar criticidade
+- Análise semântica (sentence-transformers) para avaliar relevância
 - Exportação de resultados para Excel
 
 ## Instalação
@@ -27,9 +27,6 @@ source venv/bin/activate  # No Windows: venv\Scripts\activate
 
 # Instale as dependências
 pip install -r requirements.txt
-
-# Baixe os dados do NLTK necessários
-python -c "import nltk; nltk.download('vader_lexicon')"
 
 # Configure a SECRET_KEY (obrigatório para produção)
 # Gere uma chave segura:
@@ -54,7 +51,7 @@ Para rodar os testes: `pytest tests/ -v`
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
 2. O sistema identifica parágrafos contendo palavras-chave relacionadas a lacunas de pesquisa
-3. Cada parágrafo recebe um "Insight Score" calculado via análise de sentimento
+3. Cada parágrafo recebe um "Insight Score" calculado via similaridade semântica (0.0-1.0)
 4. Os resultados podem ser visualizados na interface ou exportados para Excel
 
 ## Variáveis de Ambiente

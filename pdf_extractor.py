@@ -45,14 +45,9 @@ FOOTER_MARGIN = 60  # points (~0.8 inch) from bottom
 def _extract_blocks_column_aware(page: fitz.Page) -> tuple[str, str | None, str | None]:
     """Extract text from page respecting two-column layout.
 
-    Filters out header/footer areas and reads left column entirely
-    before right column.
-
-    Returns:
-        tuple of (page_text, trailing_text, leading_text) where:
-        - page_text: full extracted text with paragraphs joined by \\n\\n
-        - trailing_text: text from the visually-last block (highest y0)
-        - leading_text: text from the visually-first block (lowest y0)
+    Filters out header/footer areas and reads left column before right.
+    Returns (page_text, trailing_text, leading_text) where trailing/leading
+    are the visually-last/first blocks for cross-page continuation.
     """
     blocks = page.get_text("blocks")
     text_blocks = [b for b in blocks if b[6] == 0]

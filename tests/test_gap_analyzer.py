@@ -4,48 +4,81 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from gap_analyzer import (
-    analyze_sentiment,
+    calculate_similarity_score,
     analyze_pages,
     _join_paragraphs,
     _is_incomplete
 )
 
 
-class TestSentimentAnalysis:
-    """VADER sentiment integration tests"""
+class TestSemanticSimilarity:
+    """Sentence-transformers semantic similarity tests"""
 
     def test_returns_valid_score_range(self):
-        score = analyze_sentiment("This research presents interesting findings")
+        score = calculate_similarity_score("This research presents interesting findings")
         assert isinstance(score, float)
-        assert -1.0 <= score <= 1.0
+        assert 0.0 <= score <= 1.0
 
-    def test_detects_strongly_positive(self):
-        score = analyze_sentiment("This is excellent and amazing research with outstanding results!")
-        assert score > 0.5, score
+    def test_high_similarity_for_gap_text(self):
+        text = "This research reveals a significant gap in understanding the underlying mechanisms"
+        score = calculate_similarity_score(text)
+        assert score >= 0.6, f"Expected score >= 0.6 for gap text, got {score}"
 
-    def test_detects_strongly_negative(self):
-        score = analyze_sentiment("This research is terrible, flawed, and completely worthless.")
-        assert score < -0.5, score
+    def test_low_similarity_for_unrelated_text(self):
+        text = "The weather was sunny and warm today with clear blue skies"
+        score = calculate_similarity_score(text)
+        assert score < 0.5, f"Expected score < 0.5 for unrelated text, got {score}"
 
-    def test_handles_neutral_text(self):
-        score = analyze_sentiment("The study examined data from multiple sources.")
-        assert -0.3 <= score <= 0.3, score
+    def test_model_loads_lazily(self):
+        # This test just verifies the model loads without error
+        score = calculate_similarity_score("A limitation of this study")
+        assert score > 0.0
+
+
+class TestThresholdFiltering:
+    """Tests for threshold and top-K filtering"""
+
+    def test_respects_threshold(self):
+        pages = iter([
+            (1, "This has a major limitation.\n\nThis has a gap.\n\nThis has a shortage.",
+             None, None)
+        ])
+        # Use a high threshold that filters out low-scoring matches
+        results = analyze_pages(pages, threshold=0.5, top_k=100)
+        assert all(r[2] >= 0.5 for r in results), f"Found scores below threshold: {[r[2] for r in results]}"
+
+    def test_returns_top_k(self):
+        # Create many paragraphs with gaps
+        gaps_text = "\n\n".join([f"This study has a significant limitation in aspect {i}." for i in range(30)])
+        pages = iter([(1, gaps_text, None, None)])
+        results = analyze_pages(pages, threshold=0.0, top_k=5)
+        assert len(results) <= 5, f"Expected at most 5 results, got {len(results)}"
+
+    def test_handles_unrelated_input(self):
+        pages = iter([(1, "The cat sat on the warm windowsill.", None, None)])
+        results = analyze_pages(pages)
+        assert len(results) == 0
 
 
 class TestGapDetection:
-    """Keyword-based research gap detection tests"""
+    """Semantic research gap detection tests"""
 
-    def test_finds_limitation_keyword(self):
-        text = "This research has a significant limitation in the methodology."
-        # (page_num, page_text, trailing_text, leading_text)
+    def test_detects_gap_with_keywords(self):
+        text = "This research has a significant limitation in the methodology used to evaluate the proposed framework."
         pages = iter([(1, text, text, text)])
         results = analyze_pages(pages)
         assert len(results) > 0
         assert results[0][0] == 1
         assert "limitation" in results[0][1].lower()
 
-    def test_returns_empty_for_no_keywords(self):
-        text = "This text contains no relevant keywords at all."
+    def test_detects_gap_without_keywords(self):
+        text = "Current models fail to account for temporal dynamics in cross-cultural contexts."
+        pages = iter([(1, text, text, text)])
+        results = analyze_pages(pages, threshold=0.3)
+        assert len(results) > 0, f"Expected semantic gap detection without keywords, got no results"
+
+    def test_returns_empty_for_unrelated_text(self):
+        text = "The weather was sunny and warm today with clear blue skies."
         pages = iter([(1, text, text, text)])
         results = analyze_pages(pages)
         assert len(results) == 0
@@ -75,9 +108,9 @@ class TestCrossPageParagraphs:
             (1, "This study has a significant limita-",
              "This study has a significant limita-",
              "This study has a significant limita-"),
-            (2, "tion in the methodology.",
-             "tion in the methodology.",
-             "tion in the methodology.")
+            (2, "tion in the methodology used to evaluate the proposed framework and its implications.",
+             "tion in the methodology used to evaluate the proposed framework and its implications.",
+             "tion in the methodology used to evaluate the proposed framework and its implications.")
         ])
         results = analyze_pages(pages)
         assert len(results) == 1
@@ -85,12 +118,13 @@ class TestCrossPageParagraphs:
         assert "limita-" not in results[0][1]
 
     def test_preserves_complete_paragraphs(self):
-        page1_text = "This paragraph is complete.\n\nThis has a limitation."
+        gap_text = "This study has a significant limitation in the methodology used to evaluate the proposed framework."
+        page1_text = f"This paragraph is complete and does not contain anything relevant to research.\n\n{gap_text}"
         pages = iter([
-            (1, page1_text, "This has a limitation.", "This paragraph is complete."),
-            (2, "Another complete paragraph.", "Another complete paragraph.", "Another complete paragraph.")
+            (1, page1_text, gap_text, "This paragraph is complete and does not contain anything relevant to research."),
+            (2, "Another complete paragraph about unrelated topics.", "Another complete paragraph about unrelated topics.", "Another complete paragraph about unrelated topics.")
         ])
-        results = analyze_pages(pages)
+        results = analyze_pages(pages, threshold=0.4)
         assert len(results) == 1
         assert results[0][0] == 1
 

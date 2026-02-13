@@ -11,30 +11,35 @@
         <h1>GapFinder Results</h1>
     </div>
     <div class="container">
-        {% if data %}
         <div class="results-summary">
             <h2>Analysis Summary</h2>
             <div class="summary-stats">
                 <div class="stat-item">
+                    <div class="stat-value">{{ files_analyzed }}</div>
+                    <div class="stat-label">Files Analyzed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">{{ files_with_gaps }}</div>
+                    <div class="stat-label">Files with Gaps</div>
+                </div>
+                <div class="stat-item">
                     <div class="stat-value">{{ data | length }}</div>
                     <div class="stat-label">Insights Extracted</div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-value">{{ data | map(attribute='file') | unique | list | length }}</div>
-                    <div class="stat-label">Files Processed</div>
-                </div>
             </div>
+            {% if data %}
             <div class="insight-legend">
-                <p><strong>Insight Score Legend:</strong></p>
+                <p><strong>Similarity Score:</strong> Higher = more similar to known research gaps</p>
                 <div class="legend-items">
-                    <span class="legend-item negative">-1.0 to -0.1: Gap / Challenge</span>
-                    <span class="legend-item neutral">-0.1 to 0.1: Context / Background</span>
-                    <span class="legend-item positive">0.1 to 1.0: Achievement / Refinement</span>
+                    <span class="legend-item positive">≥ 0.40: Strong match</span>
+                    <span class="legend-item neutral">0.30 – 0.39: Moderate match</span>
+                    <span class="legend-item negative">< 0.30: Weak match</span>
                 </div>
             </div>
+            {% endif %}
         </div>
-        {% endif %}
 
+        {% if data %}
         <div class="scrollable">
             <table>
                 <tr>
@@ -45,7 +50,7 @@
                     <th>Keywords</th>
                     <th>Page</th>
                     <th>Paragraph</th>
-                    <th>Insight</th> <!-- Updated column name from Score to Insight -->
+                    <th>Insight</th>
                 </tr>
                 {% for row in data %}
                 <tr>
@@ -61,22 +66,22 @@
                     </td>
                     <td class="insight-cell">
                         {% set score = row.insight %}
-                        {% if score >= 0.1 %}
+                        {% if score >= 0.40 %}
                             <span class="insight-badge positive">{{ '%0.2f' % score }}</span>
-                        {% elif score <= -0.1 %}
-                            <span class="insight-badge negative">{{ '%0.2f' % score }}</span>
-                        {% else %}
+                        {% elif score >= 0.30 %}
                             <span class="insight-badge neutral">{{ '%0.2f' % score }}</span>
+                        {% else %}
+                            <span class="insight-badge negative">{{ '%0.2f' % score }}</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </table>
-            {% if not data %}
-            <p>No data available to display. Please upload files and try again.</p>
-            {% endif %}
         </div>
         <a href="/download" class="button">Download Results</a>
+        {% else %}
+        <p>All {{ files_analyzed }} file{{ 's' if files_analyzed != 1 }} were analyzed successfully, but no research gaps were detected above the similarity threshold.</p>
+        {% endif %}
         <a href="/" class="button">Back to Home</a>
     </div>
 </body>
