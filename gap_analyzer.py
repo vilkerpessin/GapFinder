@@ -26,10 +26,10 @@ MIN_PARAGRAPH_LENGTH = 80
 
 
 def _get_model() -> SentenceTransformer:
-    """Lazy load all-MiniLM-L6-v2 model (~80-100MB runtime memory)."""
+    """Lazy load multilingual MiniLM model (~500MB runtime memory, 50+ languages)."""
     global _semantic_model
     if _semantic_model is None:
-        _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+        _semantic_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
     return _semantic_model
 
 
@@ -55,7 +55,7 @@ def calculate_similarity_score(text: str) -> float:
     # Encode text as tensor (shape: 384)
     text_embedding = model.encode(text, convert_to_tensor=True)
 
-    # Compute cosine similarity (returns tensor of shape: 10)
+    # Cosine similarity against all anchors (returns tensor of shape: 10)
     similarities = util.cos_sim(text_embedding, anchor_embeddings)[0]
 
     return float(similarities.max())
@@ -109,7 +109,7 @@ def _normalize_for_comparison(text: str) -> str:
 
 def analyze_pages(
     pages: Iterator[tuple[int, str, str | None, str | None]],
-    threshold: float = 0.3,
+    threshold: float = 0.4,
     top_k: int = 20
 ) -> list[tuple[int, str, float]]:
     """Find paragraphs semantically similar to known research gaps.
