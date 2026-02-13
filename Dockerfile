@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Pre-download multilingual model (~470MB) so first request isn't slow
+ENV HF_HOME=/app/.cache/huggingface
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
