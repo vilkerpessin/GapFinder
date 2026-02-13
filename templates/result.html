@@ -31,9 +31,9 @@
             <div class="insight-legend">
                 <p><strong>Similarity Score:</strong> Higher = more similar to known research gaps</p>
                 <div class="legend-items">
-                    <span class="legend-item positive">≥ 0.40: Strong match</span>
-                    <span class="legend-item neutral">0.30 – 0.39: Moderate match</span>
-                    <span class="legend-item negative">< 0.30: Weak match</span>
+                    <span class="legend-item positive">≥ 0.60: Strong match</span>
+                    <span class="legend-item neutral">0.40 – 0.59: Moderate match</span>
+                    <span class="legend-item negative">< 0.40: Weak match</span>
                 </div>
             </div>
             {% endif %}
@@ -66,9 +66,9 @@
                     </td>
                     <td class="insight-cell">
                         {% set score = row.insight %}
-                        {% if score >= 0.40 %}
+                        {% if score >= 0.60 %}
                             <span class="insight-badge positive">{{ '%0.2f' % score }}</span>
-                        {% elif score >= 0.30 %}
+                        {% elif score >= 0.40 %}
                             <span class="insight-badge neutral">{{ '%0.2f' % score }}</span>
                         {% else %}
                             <span class="insight-badge negative">{{ '%0.2f' % score }}</span>
