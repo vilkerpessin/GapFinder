@@ -75,7 +75,7 @@ tr:nth-child(even) {
     color: #1e2a78;
     font-weight: bold;
 }
-#loading {
+#progress-container {
     text-align: center;
     padding: 30px;
     margin-top: 20px;
@@ -84,16 +84,47 @@ tr:nth-child(even) {
     border-radius: 5px;
 }
 
-#loading p {
+#progress-message {
     color: #1e2a78;
     font-size: 16px;
     font-weight: 500;
     margin-top: 15px;
 }
 
-.loading-gif {
-    width: 200px;
-    height: auto;
+.progress-note {
+    color: #666;
+    font-size: 14px;
+    margin-top: 10px;
+}
+
+.progress-bar-wrapper {
+    width: 100%;
+    height: 24px;
+    background-color: #e0e0e0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1e2a78, #2d3f9f);
+    border-radius: 12px;
+    transition: width 0.3s ease;
+}
+
+#error-container {
+    text-align: center;
+    padding: 30px;
+    margin-top: 20px;
+    background-color: #ffebee;
+    border-left: 4px solid #d32f2f;
+    border-radius: 5px;
+}
+
+#error-message {
+    color: #d32f2f;
+    font-weight: 500;
 }
 
 .file-preview {
@@ -396,8 +427,8 @@ tr:nth-child(even) {
         margin: 10px 0;
     }
 
-    .loading-gif {
-        width: 150px;
+    .progress-bar-wrapper {
+        height: 20px;
     }
 
     .stat-value {

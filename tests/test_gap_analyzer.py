@@ -151,3 +151,21 @@ class TestHelperFunctions:
 
     def test_is_incomplete_with_quote(self):
         assert _is_incomplete('He said "done"') is False
+
+
+class TestProgressCallback:
+    """Tests for analyze_pages progress_callback support"""
+
+    def test_callback_receives_scoring_messages(self):
+        messages = []
+        text = "This study has a significant limitation in the methodology used to evaluate the proposed framework."
+        pages = iter([(1, text, text, text)])
+        analyze_pages(pages, threshold=0.0, progress_callback=messages.append)
+        assert any("Scored" in m for m in messages)
+        assert any("Scoring" in m for m in messages)
+
+    def test_works_without_callback(self):
+        text = "This study has a significant limitation in the methodology used to evaluate the proposed framework."
+        pages = iter([(1, text, text, text)])
+        results = analyze_pages(pages, threshold=0.0)
+        assert isinstance(results, list)

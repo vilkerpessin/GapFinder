@@ -24,4 +24,4 @@ USER appuser
 
 EXPOSE 7860
 
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "--timeout", "300", "--preload", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "1", "--threads", "3", "--timeout", "300", "--preload", "app:app"]

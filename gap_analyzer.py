@@ -1,6 +1,6 @@
 """Detect potential research gaps via semantic similarity."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from sentence_transformers import SentenceTransformer, util
 
@@ -110,7 +110,8 @@ def _normalize_for_comparison(text: str) -> str:
 def analyze_pages(
     pages: Iterator[tuple[int, str, str | None, str | None]],
     threshold: float = 0.4,
-    top_k: int = 20
+    top_k: int = 20,
+    progress_callback: Callable[[str], None] | None = None
 ) -> list[tuple[int, str, float]]:
     """Find paragraphs semantically similar to known research gaps.
 
@@ -180,15 +181,30 @@ def analyze_pages(
     if not candidates:
         return []
 
-    # Batch encode all paragraphs in one call instead of one-by-one
     model = _get_model()
     anchor_embeddings = _get_anchor_embeddings()
     texts = [text for _, text in candidates]
-    text_embeddings = model.encode(texts, batch_size=32, convert_to_tensor=True)
+    total = len(texts)
 
-    # Batch cosine similarity: (N x 384) vs (10 x 384) -> (N x 10)
-    all_similarities = util.cos_sim(text_embeddings, anchor_embeddings)
-    max_scores = all_similarities.max(dim=1).values
+    if progress_callback:
+        progress_callback(f"Scoring {total} paragraphs...")
+
+    # Encode in chunks so we can report progress between batches
+    ENCODE_BATCH = 32
+    all_max_scores = []
+
+    for i in range(0, total, ENCODE_BATCH):
+        chunk = texts[i:i + ENCODE_BATCH]
+        chunk_embeddings = model.encode(chunk, batch_size=ENCODE_BATCH, convert_to_tensor=True)
+        chunk_similarities = util.cos_sim(chunk_embeddings, anchor_embeddings)
+        all_max_scores.append(chunk_similarities.max(dim=1).values)
+
+        if progress_callback:
+            scored = min(i + ENCODE_BATCH, total)
+            progress_callback(f"Scored {scored}/{total} paragraphs ({scored * 100 // total}%)")
+
+    import torch
+    max_scores = torch.cat(all_max_scores)
 
     results = [
         (page_num, text, float(score))
