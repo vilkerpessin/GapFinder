@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash git git-lfs wget curl procps && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# CPU-only PyTorch first (avoids pulling the 2GB CUDA build)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 7860
+
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "--timeout", "300", "--preload", "app:app"]

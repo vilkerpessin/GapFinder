@@ -1,6 +1,17 @@
+---
+title: GapFinder
+emoji: 🔍
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # GapFinder
 
 O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial desenvolvido por **Vilker Zucolotto Pessin** como parte de sua pesquisa de doutorado, com o objetivo de auxiliar pesquisadores na identificação de lacunas científicas em artigos acadêmicos.
+
+**Demo online:** https://huggingface.co/spaces/dmgobbi/GapFinder
 
 **Artigo científico:** https://www.scholink.org/ojs/index.php/selt/article/view/55751
 
@@ -43,7 +54,7 @@ cp .env.example .env
 python app.py
 ```
 
-Acesse: `http://localhost:5000`
+Acesse: `http://localhost:7860`
 
 Para rodar os testes: `pytest tests/ -v`
 
@@ -56,7 +67,7 @@ Para rodar os testes: `pytest tests/ -v`
 
 ## Variáveis de Ambiente
 
-- `SECRET_KEY`: Chave secreta para sessões Flask (obrigatório em produção)
+- `SECRET_KEY`: Chave secreta do Flask (obrigatório em produção)
 - `FLASK_ENV`: Ambiente de execução (`development` ou `production`)
 
 

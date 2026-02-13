@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+.pytest_cache/
+flask_session/
+.env
+.git/
+*.pdf
