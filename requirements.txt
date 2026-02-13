@@ -1,5 +1,4 @@
 ﻿blinker==1.7.0
-cachelib==0.13.0
 certifi==2024.2.2
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -7,7 +6,6 @@ click==8.1.7
 colorama==0.4.6
 cryptography==42.0.5
 Flask==3.0.3
-Flask-Session==0.8.0
 gunicorn==22.0.0
 idna==3.7
 itsdangerous==2.2.0

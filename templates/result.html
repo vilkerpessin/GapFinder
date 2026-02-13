@@ -78,7 +78,7 @@
                 {% endfor %}
             </table>
         </div>
-        <a href="/download" class="button">Download Results</a>
+        <a href="/download/{{ result_id }}" class="button">Download Results</a>
         {% else %}
         <p>All {{ files_analyzed }} file{{ 's' if files_analyzed != 1 }} were analyzed successfully, but no research gaps were detected above the similarity threshold.</p>
         {% endif %}
