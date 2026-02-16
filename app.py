@@ -10,8 +10,13 @@ import uuid
 import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
+import logging
+
 from pdf_extractor import extract_metadata, extract_text_by_page
 from gap_analyzer import analyze_pages
+from llm_analyzer import verify_gaps, generate_report
+
+logger = logging.getLogger(__name__)
 
 
 app = Flask(__name__)
@@ -276,7 +281,103 @@ def show_result(result_id):
         data=result["data"],
         files_analyzed=result["files_analyzed"],
         files_with_gaps=result["files_with_gaps"],
-        result_id=result_id
+        result_id=result_id,
+        llm_analysis=result.get("llm_analysis"),
+    )
+
+
+@app.route('/analyze-llm/<result_id>', methods=['POST'])
+def analyze_with_llm(result_id):
+    """Run LLM gap verification and report generation on existing results."""
+    if not _is_valid_hex_id(result_id):
+        return jsonify({"error": "Invalid result ID."}), 400
+
+    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
+    if not os.path.isfile(json_path):
+        return jsonify({"error": "Results not found. They may have expired."}), 404
+
+    api_key = (request.json or {}).get("api_key", "").strip()
+    if not api_key:
+        return jsonify({"error": "API key is required."}), 400
+
+    with open(json_path, 'r') as f:
+        result = json.load(f)
+
+    if not result["data"]:
+        return jsonify({"error": "No gaps to analyze."}), 400
+
+    try:
+        verified = verify_gaps(api_key, result["data"])
+
+        seen_files = set()
+        paper_metadata = []
+        for row in result["data"]:
+            if row["file"] not in seen_files:
+                seen_files.add(row["file"])
+                paper_metadata.append({
+                    "title": row.get("title", ""),
+                    "author": row.get("author", ""),
+                    "doi": row.get("doi", ""),
+                })
+
+        report = generate_report(api_key, verified, paper_metadata)
+
+        confirmed_count = sum(1 for g in verified if g["verdict"] == "confirmed_gap")
+        false_positive_count = sum(1 for g in verified if g["verdict"] == "false_positive")
+
+        result["llm_analysis"] = {
+            "verified_gaps": verified,
+            "report": report,
+            "confirmed_count": confirmed_count,
+            "false_positive_count": false_positive_count,
+        }
+
+        with open(json_path, 'w') as f:
+            json.dump(result, f)
+
+        return jsonify({
+            "success": True,
+            "verified_gaps": verified,
+            "report": report,
+            "confirmed_count": confirmed_count,
+            "false_positive_count": false_positive_count,
+        })
+
+    except Exception as e:
+        error_msg = str(e)
+        if "API_KEY_INVALID" in error_msg or "401" in error_msg:
+            return jsonify({"error": "Invalid API key. Check your Gemini API key and try again."}), 401
+        if "429" in error_msg or "RATE_LIMIT" in error_msg:
+            return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
+        if "quota" in error_msg.lower():
+            return jsonify({"error": "API quota exceeded. Try again later or use a different key."}), 429
+
+        logger.exception("LLM analysis failed")
+        return jsonify({"error": f"AI analysis failed: {error_msg}"}), 500
+
+
+@app.route('/download-report/<result_id>')
+def download_report(result_id):
+    """Download the LLM-generated research analysis report as Markdown."""
+    if not _is_valid_hex_id(result_id):
+        return "Invalid result ID.", 400
+
+    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
+    if not os.path.isfile(json_path):
+        return "Results not found.", 404
+
+    with open(json_path, 'r') as f:
+        result = json.load(f)
+
+    llm = result.get("llm_analysis")
+    if not llm or not llm.get("report"):
+        return "No AI report available. Run AI analysis first.", 400
+
+    return send_file(
+        io.BytesIO(llm["report"].encode("utf-8")),
+        mimetype="text/markdown",
+        as_attachment=True,
+        download_name="gapfinder_report.md",
     )
 
 

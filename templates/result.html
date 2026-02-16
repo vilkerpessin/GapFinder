@@ -40,8 +40,44 @@
         </div>
 
         {% if data %}
+        <div id="llm-section" class="llm-section">
+            <h3>AI-Powered Gap Verification</h3>
+            <p class="llm-description">
+                Optionally verify detected gaps using Google Gemini AI.
+                Your API key is sent to Google's API and never stored.
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free API key</a>
+            </p>
+            <div class="llm-input-row">
+                <input type="password" id="api-key-input" class="api-key-input"
+                       placeholder="Paste your Gemini API key here" autocomplete="off">
+                <button type="button" id="llm-analyze-btn" class="button" onclick="runLlmAnalysis()">
+                    Analyze with AI
+                </button>
+            </div>
+            <div id="llm-progress" style="display:none;">
+                <p id="llm-progress-msg">Verifying gaps with AI... This may take 30–60 seconds.</p>
+            </div>
+            <div id="llm-error" style="display:none;">
+                <p id="llm-error-msg"></p>
+            </div>
+        </div>
+
+        <div id="llm-report-section" style="display:none;" class="llm-report-section">
+            <h3>AI Analysis Report</h3>
+            <div class="llm-stats">
+                <span class="llm-stat confirmed">
+                    <strong id="confirmed-count">0</strong> Confirmed Gaps
+                </span>
+                <span class="llm-stat false-positive">
+                    <strong id="fp-count">0</strong> False Positives
+                </span>
+            </div>
+            <div id="llm-report-content" class="llm-report-content"></div>
+            <a id="download-report-btn" href="#" class="button">Download Report</a>
+        </div>
+
         <div class="scrollable">
-            <table>
+            <table id="results-table">
                 <tr>
                     <th>File</th>
                     <th>DOI</th>
@@ -84,5 +120,136 @@
         {% endif %}
         <a href="/" class="button">Back to Home</a>
     </div>
+
+    <script>
+    var RESULT_ID = "{{ result_id }}";
+
+    function runLlmAnalysis() {
+        var apiKey = document.getElementById('api-key-input').value.trim();
+        if (!apiKey) {
+            alert('Please enter your Gemini API key.');
+            return;
+        }
+
+        var btn = document.getElementById('llm-analyze-btn');
+        var progress = document.getElementById('llm-progress');
+        var errorDiv = document.getElementById('llm-error');
+
+        btn.disabled = true;
+        btn.textContent = 'Analyzing...';
+        progress.style.display = 'block';
+        errorDiv.style.display = 'none';
+
+        fetch('/analyze-llm/' + RESULT_ID, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey }),
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                return response.json().then(function(err) { throw new Error(err.error); });
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            progress.style.display = 'none';
+            btn.textContent = 'Re-analyze';
+            btn.disabled = false;
+            renderLlmResults(data);
+        })
+        .catch(function(error) {
+            progress.style.display = 'none';
+            errorDiv.style.display = 'block';
+            document.getElementById('llm-error-msg').textContent = error.message;
+            btn.textContent = 'Retry';
+            btn.disabled = false;
+        });
+    }
+
+    function renderLlmResults(data) {
+        document.getElementById('confirmed-count').textContent = data.confirmed_count;
+        document.getElementById('fp-count').textContent = data.false_positive_count;
+
+        var reportHtml = simpleMarkdownToHtml(data.report);
+        document.getElementById('llm-report-content').innerHTML = reportHtml;
+
+        document.getElementById('download-report-btn').href = '/download-report/' + RESULT_ID;
+        document.getElementById('llm-report-section').style.display = 'block';
+
+        updateTableVerdicts(data.verified_gaps);
+    }
+
+    function updateTableVerdicts(verifiedGaps) {
+        var table = document.getElementById('results-table');
+        var headerRow = table.querySelector('tr:first-child');
+
+        // Add verdict header if not present
+        if (!document.getElementById('verdict-header')) {
+            var th = document.createElement('th');
+            th.id = 'verdict-header';
+            th.textContent = 'LLM Verdict';
+            headerRow.appendChild(th);
+        }
+
+        var rows = table.querySelectorAll('tr:not(:first-child)');
+        rows.forEach(function(row, i) {
+            // Remove any existing verdict cell (for re-analysis)
+            var existing = row.querySelector('.verdict-cell');
+            if (existing) existing.remove();
+
+            if (i < verifiedGaps.length) {
+                var td = document.createElement('td');
+                td.className = 'verdict-cell';
+
+                var v = verifiedGaps[i];
+                var badgeClass, label;
+                if (v.verdict === 'confirmed_gap') {
+                    badgeClass = 'verdict-confirmed';
+                    label = 'Confirmed Gap';
+                } else if (v.verdict === 'false_positive') {
+                    badgeClass = 'verdict-fp';
+                    label = 'False Positive';
+                } else {
+                    badgeClass = 'verdict-uncertain';
+                    label = 'Uncertain';
+                }
+
+                td.innerHTML =
+                    '<span class="verdict-badge ' + badgeClass + '">' + label + '</span>' +
+                    '<span class="verdict-reason">' + escapeHtml(v.reason) + '</span>' +
+                    (v.evidence_quote ? '<span class="evidence-quote">"' + escapeHtml(v.evidence_quote) + '"</span>' : '');
+                row.appendChild(td);
+            }
+        });
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function simpleMarkdownToHtml(md) {
+        return md
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/^### (.*$)/gm, '<h4>$1</h4>')
+            .replace(/^## (.*$)/gm, '<h3>$1</h3>')
+            .replace(/^# (.*$)/gm, '<h2>$1</h2>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/^- (.*$)/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+            .replace(/\n\n/g, '<br><br>')
+            .replace(/\n/g, '<br>');
+    }
+
+    // Auto-render persisted LLM results on page load
+    {% if llm_analysis %}
+    document.addEventListener('DOMContentLoaded', function() {
+        var llmData = {{ llm_analysis | tojson }};
+        renderLlmResults(llmData);
+    });
+    {% endif %}
+    </script>
 </body>
 </html>
