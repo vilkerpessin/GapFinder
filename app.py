@@ -14,7 +14,8 @@ import logging
 
 from pdf_extractor import extract_metadata, extract_text_by_page
 from gap_analyzer import analyze_pages
-from llm_analyzer import verify_gaps, generate_report
+from llm_analyzer import analyze_gaps, generate_report
+from google.genai import errors as genai_errors
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +281,6 @@ def show_result(result_id):
         'result.html',
         data=result["data"],
         files_analyzed=result["files_analyzed"],
-        files_with_gaps=result["files_with_gaps"],
         result_id=result_id,
         llm_analysis=result.get("llm_analysis"),
     )
@@ -307,7 +307,7 @@ def analyze_with_llm(result_id):
         return jsonify({"error": "No gaps to analyze."}), 400
 
     try:
-        verified = verify_gaps(api_key, result["data"])
+        analyzed = analyze_gaps(api_key, result["data"])
 
         seen_files = set()
         paper_metadata = []
@@ -320,40 +320,51 @@ def analyze_with_llm(result_id):
                     "doi": row.get("doi", ""),
                 })
 
-        report = generate_report(api_key, verified, paper_metadata)
-
-        confirmed_count = sum(1 for g in verified if g["verdict"] == "confirmed_gap")
-        false_positive_count = sum(1 for g in verified if g["verdict"] == "false_positive")
+        report = generate_report(api_key, analyzed, paper_metadata)
 
         result["llm_analysis"] = {
-            "verified_gaps": verified,
+            "analyzed_gaps": analyzed,
             "report": report,
-            "confirmed_count": confirmed_count,
-            "false_positive_count": false_positive_count,
         }
 
         with open(json_path, 'w') as f:
             json.dump(result, f)
 
+        # Regenerate Excel with LLM comment column
+        xlsx_path = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
+        comment_map = {
+            (g["file"], g["page"], g["paragraph"][:80]): g.get("llm_comment", "")
+            for g in analyzed
+        }
+        export_rows = []
+        for row in result["data"]:
+            key = (row["file"], row["page"], row["paragraph"][:80])
+            export_rows.append({
+                **row,
+                "llm_comment": comment_map.get(key, ""),
+            })
+        df = pd.DataFrame(export_rows)
+        with pd.ExcelWriter(xlsx_path, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sheet1')
+
         return jsonify({
             "success": True,
-            "verified_gaps": verified,
+            "analyzed_gaps": analyzed,
             "report": report,
-            "confirmed_count": confirmed_count,
-            "false_positive_count": false_positive_count,
         })
 
-    except Exception as e:
-        error_msg = str(e)
-        if "API_KEY_INVALID" in error_msg or "401" in error_msg:
+    except genai_errors.ClientError as e:
+        if e.code == 401 or e.code == 403:
             return jsonify({"error": "Invalid API key. Check your Gemini API key and try again."}), 401
-        if "429" in error_msg or "RATE_LIMIT" in error_msg:
+        if e.code == 429:
             return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
-        if "quota" in error_msg.lower():
-            return jsonify({"error": "API quota exceeded. Try again later or use a different key."}), 429
+        return jsonify({"error": f"AI analysis failed: {e.message or e}"}), 400
 
-        logger.exception("LLM analysis failed")
-        return jsonify({"error": f"AI analysis failed: {error_msg}"}), 500
+    except genai_errors.ServerError as e:
+        return jsonify({"error": "Gemini API is temporarily unavailable. Try again later."}), 502
+
+    except Exception as e:
+        return jsonify({"error": f"AI analysis failed: {e}"}), 500
 
 
 @app.route('/download-report/<result_id>')

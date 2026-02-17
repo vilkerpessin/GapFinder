@@ -1,6 +1,5 @@
-"""LLM-based gap verification and report generation using Gemini API."""
+"""LLM-based gap analysis and report generation using Gemini API."""
 
-import json
 import logging
 
 from pydantic import BaseModel
@@ -10,90 +9,56 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-VERIFY_BATCH_SIZE = 10
-MODEL = "gemini-2.5-flash"
+BATCH_SIZE = 10
+PARAGRAPH_TRUNCATE = 300
+MODEL = "gemini-2.5-flash-lite"
 
-VERIFICATION_SYSTEM_PROMPT = """\
-You are an expert academic research methodology reviewer.
+COMMENT_SYSTEM_PROMPT = """\
+You are an academic research reviewer. For each paragraph, write a single short \
+comment (1 sentence, max 20 words) assessing its relevance as a research gap.
 
-TASK: Classify each numbered paragraph as a genuine research gap or a false positive.
+Examples of good comments:
+- "Methodological limitation — small sample size limits generalization"
+- "Identifies understudied geographic region in existing literature"
+- "Literature review summary, not a gap — describes existing findings"
+- "Suggests conflicting results that need further investigation"
+- "General conclusion language, no specific research opportunity identified"
 
-A RESEARCH GAP is where authors EXPLICITLY identify:
-- An area that has NOT been studied or is understudied
-- A limitation of existing research that creates an opening for new work
-- Conflicting findings that need resolution
-- A methodology weakness that future research should address
-
-CRITICAL — These are FALSE POSITIVES, not gaps:
-- Literature review sentences: "Studies have investigated...", "Several authors have \
-shown...", "Research has demonstrated...", "Previous work has examined...", \
-"It has been widely reported..."
-- Descriptions of the authors' own methodology or results
-- General academic language that superficially resembles gap language
-- Summaries of existing findings without identifying what is MISSING
-
-Literature reviews DESCRIBE what IS known. Gaps identify what is NOT known. \
-High semantic similarity to gap language does NOT mean it is a gap.
-
-For evidence_quote: extract the EXACT 5–10 consecutive words from the paragraph \
-that most clearly signal this is a gap (e.g., "remains poorly understood", \
-"no study has examined", "further research is needed"). Copy the paragraph's \
-exact wording — do not paraphrase. If classifying as false_positive, quote the \
-words that reveal it is a review/description, not a gap."""
+Be concise and specific. Focus on what makes it a gap or why it is not one."""
 
 REPORT_SYSTEM_PROMPT = """\
-You are an expert academic research advisor. Based on the confirmed research gaps \
-found in the analyzed papers, write a concise research analysis report.
+You are an expert academic research advisor. Based on the paragraphs flagged as \
+potential research gaps in the analyzed papers, write a concise research analysis.
 
 The report should:
-1. Summarize the key research gaps identified across the papers
+1. Identify the most promising research gaps and opportunities
 2. Group related gaps by theme if applicable
-3. Suggest specific research directions that could address these gaps
-4. Note any patterns (e.g., multiple papers identifying similar limitations)
+3. Suggest specific research directions
+4. Note which paragraphs are likely false positives (literature reviews, general statements)
 
 Write in clear academic English. Use Markdown formatting with headers and bullet \
-points. Keep the report between 300–800 words. Be specific and actionable. \
-Ground your analysis in the evidence quotes provided."""
+points. Keep the report between 150–300 words. Be specific and actionable."""
 
 
-class GapVerdict(BaseModel):
+class GapComment(BaseModel):
     index: int
-    verdict: str
-    reason: str
-    evidence_quote: str
+    comment: str
 
 
-def _validate_evidence(verdict: GapVerdict, source_paragraph: str) -> dict:
-    """Check that evidence_quote exists in the source text. Downgrade if not."""
-    result = {
-        "verdict": verdict.verdict,
-        "reason": verdict.reason,
-        "evidence_quote": verdict.evidence_quote,
-    }
-
-    if not verdict.evidence_quote or verdict.evidence_quote not in source_paragraph:
-        # Quote not found in source — can't trust the classification
-        result["verdict"] = "uncertain"
-        result["reason"] = "Evidence quote not found in source text"
-
-    return result
-
-
-def _verify_batch(
+def _analyze_batch(
     client: genai.Client,
     batch: list[dict],
-    index_offset: int,
-) -> list[GapVerdict]:
-    """Send one batch of paragraphs to Gemini for classification."""
+) -> list[GapComment]:
+    """Send one batch of paragraphs to Gemini for comment."""
     numbered = []
     for i, gap in enumerate(batch):
         numbered.append(
-            f"[{i}] (Score: {gap['insight']:.2f}, File: {gap['file']}, Page: {gap['page']})\n"
-            f"{gap['paragraph'][:1000]}"
+            f"[{i}] (Score: {gap['insight']:.2f})\n"
+            f"{gap['paragraph'][:PARAGRAPH_TRUNCATE]}"
         )
 
     user_prompt = (
-        f"Classify each of these {len(batch)} paragraphs. "
+        f"Comment on each of these {len(batch)} paragraphs. "
         f"They were flagged by a semantic similarity model as potential research gaps.\n\n"
         + "\n\n".join(numbered)
     )
@@ -102,69 +67,59 @@ def _verify_batch(
         model=MODEL,
         contents=user_prompt,
         config=types.GenerateContentConfig(
-            system_instruction=VERIFICATION_SYSTEM_PROMPT,
+            system_instruction=COMMENT_SYSTEM_PROMPT,
             temperature=0.1,
             response_mime_type="application/json",
-            response_schema=list[GapVerdict],
+            response_schema=list[GapComment],
         ),
     )
 
     return response.parsed
 
 
-def verify_gaps(api_key: str, gaps: list[dict]) -> list[dict]:
-    """Classify semantic-scored paragraphs as confirmed gaps or false positives.
-
-    Sends paragraphs in batches of 10. Validates that evidence_quote exists
-    in the source text — downgrades to 'uncertain' if not found.
-    """
+def analyze_gaps(api_key: str, gaps: list[dict]) -> list[dict]:
+    """Add a short LLM comment to each scored paragraph."""
     if not gaps:
         return []
 
     client = genai.Client(api_key=api_key)
-    enriched = [{**g, "verdict": "uncertain", "reason": "", "evidence_quote": ""} for g in gaps]
+    enriched = [{**g, "llm_comment": ""} for g in gaps]
 
-    for batch_start in range(0, len(gaps), VERIFY_BATCH_SIZE):
-        batch = gaps[batch_start:batch_start + VERIFY_BATCH_SIZE]
+    last_error = None
+    batches_failed = 0
+    total_batches = 0
+
+    for batch_start in range(0, len(gaps), BATCH_SIZE):
+        batch = gaps[batch_start:batch_start + BATCH_SIZE]
+        total_batches += 1
 
         try:
-            verdicts = _verify_batch(client, batch, batch_start)
-        except Exception:
-            logger.exception("Batch verification failed (offset %d)", batch_start)
+            comments = _analyze_batch(client, batch)
+        except Exception as exc:
+            logger.exception("Batch analysis failed (offset %d)", batch_start)
+            last_error = exc
+            batches_failed += 1
             continue
 
-        verdict_map = {v.index: v for v in verdicts}
+        comment_map = {c.index: c for c in comments}
 
-        for i, gap in enumerate(batch):
-            verdict = verdict_map.get(i)
-            if verdict is None:
-                continue
+        for i in range(len(batch)):
+            c = comment_map.get(i)
+            if c is not None:
+                enriched[batch_start + i]["llm_comment"] = c.comment
 
-            validated = _validate_evidence(verdict, gap["paragraph"])
-            idx = batch_start + i
-            enriched[idx]["verdict"] = validated["verdict"]
-            enriched[idx]["reason"] = validated["reason"]
-            enriched[idx]["evidence_quote"] = validated["evidence_quote"]
+    if batches_failed == total_batches and last_error is not None:
+        raise last_error
 
     return enriched
 
 
 def generate_report(
     api_key: str,
-    verified_gaps: list[dict],
+    analyzed_gaps: list[dict],
     paper_metadata: list[dict],
 ) -> str:
-    """Generate a Markdown research analysis report from confirmed gaps."""
-    confirmed = [g for g in verified_gaps if g["verdict"] == "confirmed_gap"]
-
-    if not confirmed:
-        return (
-            "# Research Gap Analysis Report\n\n"
-            "No confirmed research gaps were found after AI verification. "
-            "The paragraphs flagged by semantic similarity were classified as "
-            "false positives or uncertain matches.\n"
-        )
-
+    """Generate a Markdown research analysis report from all scored paragraphs."""
     client = genai.Client(api_key=api_key)
 
     papers_section = ""
@@ -177,19 +132,20 @@ def generate_report(
         papers_section += "\n"
 
     gaps_section = ""
-    for i, gap in enumerate(confirmed, 1):
+    for i, gap in enumerate(analyzed_gaps, 1):
+        comment = gap.get("llm_comment", "")
         gaps_section += (
-            f"Gap {i} (from {gap['file']}, page {gap['page']}, "
-            f"similarity score: {gap['insight']:.2f}):\n"
-            f"{gap['paragraph'][:500]}\n"
-            f"Evidence: \"{gap['evidence_quote']}\"\n\n"
+            f"Paragraph {i} (page {gap['page']}, score: {gap['insight']:.2f}):\n"
+            f"{gap['paragraph'][:PARAGRAPH_TRUNCATE]}\n"
+            f"AI comment: {comment}\n\n"
         )
 
     user_prompt = (
         f"{papers_section}"
-        f"Confirmed research gaps ({len(confirmed)} found):\n\n"
+        f"Scored paragraphs ({len(analyzed_gaps)} total):\n\n"
         f"{gaps_section}"
-        f"Write a research analysis report based on these confirmed gaps."
+        f"Write a research analysis report identifying the most promising gaps "
+        f"and suggested research directions."
     )
 
     response = client.models.generate_content(

@@ -19,10 +19,6 @@
                     <div class="stat-label">Files Analyzed</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">{{ files_with_gaps }}</div>
-                    <div class="stat-label">Files with Gaps</div>
-                </div>
-                <div class="stat-item">
                     <div class="stat-value">{{ data | length }}</div>
                     <div class="stat-label">Insights Extracted</div>
                 </div>
@@ -37,45 +33,39 @@
                 </div>
             </div>
             {% endif %}
-        </div>
-
-        {% if data %}
-        <div id="llm-section" class="llm-section">
-            <h3>AI-Powered Gap Verification</h3>
-            <p class="llm-description">
-                Optionally verify detected gaps using Google Gemini AI.
-                Your API key is sent to Google's API and never stored.
-                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free API key</a>
-            </p>
-            <div class="llm-input-row">
-                <input type="password" id="api-key-input" class="api-key-input"
-                       placeholder="Paste your Gemini API key here" autocomplete="off">
-                <button type="button" id="llm-analyze-btn" class="button" onclick="runLlmAnalysis()">
-                    Analyze with AI
-                </button>
+            {% if data %}
+            <div class="llm-toggle" onclick="toggleLlmSection()">
+                <span id="llm-toggle-icon">&#9654;</span> Verify with AI
             </div>
-            <div id="llm-progress" style="display:none;">
-                <p id="llm-progress-msg">Verifying gaps with AI... This may take 30–60 seconds.</p>
+            <div id="llm-section" class="llm-section" style="display:none;">
+                <p class="llm-description">
+                    Use your Gemini API key to verify gaps and generate a research report.
+                    Key is sent to Google and never stored.
+                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key</a>
+                </p>
+                <div class="llm-input-row">
+                    <input type="password" id="api-key-input" class="api-key-input"
+                           placeholder="Gemini API key" autocomplete="off">
+                    <button type="button" id="llm-analyze-btn" class="button llm-button" onclick="runLlmAnalysis()">
+                        Analyze
+                    </button>
+                </div>
+                <div id="llm-progress" style="display:none;">
+                    <p id="llm-progress-msg">Verifying gaps with AI...</p>
+                </div>
+                <div id="llm-error" style="display:none;">
+                    <p id="llm-error-msg"></p>
+                </div>
             </div>
-            <div id="llm-error" style="display:none;">
-                <p id="llm-error-msg"></p>
-            </div>
+            {% endif %}
         </div>
 
         <div id="llm-report-section" style="display:none;" class="llm-report-section">
-            <h3>AI Analysis Report</h3>
-            <div class="llm-stats">
-                <span class="llm-stat confirmed">
-                    <strong id="confirmed-count">0</strong> Confirmed Gaps
-                </span>
-                <span class="llm-stat false-positive">
-                    <strong id="fp-count">0</strong> False Positives
-                </span>
-            </div>
             <div id="llm-report-content" class="llm-report-content"></div>
-            <a id="download-report-btn" href="#" class="button">Download Report</a>
+            <a id="download-report-btn" href="#" class="button llm-button">Download Report</a>
         </div>
 
+        {% if data %}
         <div class="scrollable">
             <table id="results-table">
                 <tr>
@@ -124,6 +114,18 @@
     <script>
     var RESULT_ID = "{{ result_id }}";
 
+    function toggleLlmSection() {
+        var section = document.getElementById('llm-section');
+        var icon = document.getElementById('llm-toggle-icon');
+        if (section.style.display === 'none') {
+            section.style.display = 'block';
+            icon.innerHTML = '&#9660;';
+        } else {
+            section.style.display = 'none';
+            icon.innerHTML = '&#9654;';
+        }
+    }
+
     function runLlmAnalysis() {
         var apiKey = document.getElementById('api-key-input').value.trim();
         if (!apiKey) {
@@ -167,66 +169,36 @@
     }
 
     function renderLlmResults(data) {
-        document.getElementById('confirmed-count').textContent = data.confirmed_count;
-        document.getElementById('fp-count').textContent = data.false_positive_count;
-
         var reportHtml = simpleMarkdownToHtml(data.report);
         document.getElementById('llm-report-content').innerHTML = reportHtml;
 
         document.getElementById('download-report-btn').href = '/download-report/' + RESULT_ID;
         document.getElementById('llm-report-section').style.display = 'block';
 
-        updateTableVerdicts(data.verified_gaps);
+        updateTableComments(data.analyzed_gaps);
     }
 
-    function updateTableVerdicts(verifiedGaps) {
+    function updateTableComments(analyzedGaps) {
         var table = document.getElementById('results-table');
         var headerRow = table.querySelector('tr:first-child');
 
-        // Add verdict header if not present
-        if (!document.getElementById('verdict-header')) {
+        if (!document.getElementById('comment-header')) {
             var th = document.createElement('th');
-            th.id = 'verdict-header';
-            th.textContent = 'LLM Verdict';
+            th.id = 'comment-header';
+            th.textContent = 'LLM Comment';
             headerRow.appendChild(th);
         }
 
         var rows = table.querySelectorAll('tr:not(:first-child)');
         rows.forEach(function(row, i) {
-            // Remove any existing verdict cell (for re-analysis)
-            var existing = row.querySelector('.verdict-cell');
+            var existing = row.querySelector('.comment-cell');
             if (existing) existing.remove();
 
-            if (i < verifiedGaps.length) {
-                var td = document.createElement('td');
-                td.className = 'verdict-cell';
-
-                var v = verifiedGaps[i];
-                var badgeClass, label;
-                if (v.verdict === 'confirmed_gap') {
-                    badgeClass = 'verdict-confirmed';
-                    label = 'Confirmed Gap';
-                } else if (v.verdict === 'false_positive') {
-                    badgeClass = 'verdict-fp';
-                    label = 'False Positive';
-                } else {
-                    badgeClass = 'verdict-uncertain';
-                    label = 'Uncertain';
-                }
-
-                td.innerHTML =
-                    '<span class="verdict-badge ' + badgeClass + '">' + label + '</span>' +
-                    '<span class="verdict-reason">' + escapeHtml(v.reason) + '</span>' +
-                    (v.evidence_quote ? '<span class="evidence-quote">"' + escapeHtml(v.evidence_quote) + '"</span>' : '');
-                row.appendChild(td);
-            }
+            var td = document.createElement('td');
+            td.className = 'comment-cell';
+            td.textContent = (i < analyzedGaps.length) ? (analyzedGaps[i].llm_comment || '') : '';
+            row.appendChild(td);
         });
-    }
-
-    function escapeHtml(text) {
-        var div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     function simpleMarkdownToHtml(md) {
@@ -244,12 +216,13 @@
     }
 
     // Auto-render persisted LLM results on page load
-    {% if llm_analysis %}
     document.addEventListener('DOMContentLoaded', function() {
-        var llmData = {{ llm_analysis | tojson }};
-        renderLlmResults(llmData);
+        var el = document.getElementById('llm-data');
+        if (el) renderLlmResults(JSON.parse(el.textContent));
     });
-    {% endif %}
     </script>
+    {% if llm_analysis %}
+    <script id="llm-data" type="application/json">{{ llm_analysis | tojson }}</script>
+    {% endif %}
 </body>
 </html>
