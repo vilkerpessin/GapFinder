@@ -10,8 +10,14 @@ import uuid
 import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
+import logging
+
 from pdf_extractor import extract_metadata, extract_text_by_page
 from gap_analyzer import analyze_pages
+from llm_analyzer import analyze_gaps, generate_report
+from google.genai import errors as genai_errors
+
+logger = logging.getLogger(__name__)
 
 
 app = Flask(__name__)
@@ -275,8 +281,114 @@ def show_result(result_id):
         'result.html',
         data=result["data"],
         files_analyzed=result["files_analyzed"],
-        files_with_gaps=result["files_with_gaps"],
-        result_id=result_id
+        result_id=result_id,
+        llm_analysis=result.get("llm_analysis"),
+    )
+
+
+@app.route('/analyze-llm/<result_id>', methods=['POST'])
+def analyze_with_llm(result_id):
+    """Run LLM gap verification and report generation on existing results."""
+    if not _is_valid_hex_id(result_id):
+        return jsonify({"error": "Invalid result ID."}), 400
+
+    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
+    if not os.path.isfile(json_path):
+        return jsonify({"error": "Results not found. They may have expired."}), 404
+
+    api_key = (request.json or {}).get("api_key", "").strip()
+    if not api_key:
+        return jsonify({"error": "API key is required."}), 400
+
+    with open(json_path, 'r') as f:
+        result = json.load(f)
+
+    if not result["data"]:
+        return jsonify({"error": "No gaps to analyze."}), 400
+
+    try:
+        analyzed = analyze_gaps(api_key, result["data"])
+
+        seen_files = set()
+        paper_metadata = []
+        for row in result["data"]:
+            if row["file"] not in seen_files:
+                seen_files.add(row["file"])
+                paper_metadata.append({
+                    "title": row.get("title", ""),
+                    "author": row.get("author", ""),
+                    "doi": row.get("doi", ""),
+                })
+
+        report = generate_report(api_key, analyzed, paper_metadata)
+
+        result["llm_analysis"] = {
+            "analyzed_gaps": analyzed,
+            "report": report,
+        }
+
+        with open(json_path, 'w') as f:
+            json.dump(result, f)
+
+        # Regenerate Excel with LLM comment column
+        xlsx_path = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
+        comment_map = {
+            (g["file"], g["page"], g["paragraph"][:80]): g.get("llm_comment", "")
+            for g in analyzed
+        }
+        export_rows = []
+        for row in result["data"]:
+            key = (row["file"], row["page"], row["paragraph"][:80])
+            export_rows.append({
+                **row,
+                "llm_comment": comment_map.get(key, ""),
+            })
+        df = pd.DataFrame(export_rows)
+        with pd.ExcelWriter(xlsx_path, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sheet1')
+
+        return jsonify({
+            "success": True,
+            "analyzed_gaps": analyzed,
+            "report": report,
+        })
+
+    except genai_errors.ClientError as e:
+        if e.code == 401 or e.code == 403:
+            return jsonify({"error": "Invalid API key. Check your Gemini API key and try again."}), 401
+        if e.code == 429:
+            return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
+        return jsonify({"error": f"AI analysis failed: {e.message or e}"}), 400
+
+    except genai_errors.ServerError as e:
+        return jsonify({"error": "Gemini API is temporarily unavailable. Try again later."}), 502
+
+    except Exception as e:
+        return jsonify({"error": f"AI analysis failed: {e}"}), 500
+
+
+@app.route('/download-report/<result_id>')
+def download_report(result_id):
+    """Download the LLM-generated research analysis report as Markdown."""
+    if not _is_valid_hex_id(result_id):
+        return "Invalid result ID.", 400
+
+    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
+    if not os.path.isfile(json_path):
+        return "Results not found.", 404
+
+    with open(json_path, 'r') as f:
+        result = json.load(f)
+
+    llm = result.get("llm_analysis")
+    if not llm or not llm.get("report"):
+        return "No AI report available. Run AI analysis first.", 400
+
+    return send_file(
+        io.BytesIO(llm["report"].encode("utf-8")),
+        mimetype="text/markdown",
+        as_attachment=True,
+        download_name="gapfinder_report.md",
     )
 
 

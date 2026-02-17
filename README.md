@@ -19,9 +19,9 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 
 - Upload e processamento de múltiplos PDFs simultaneamente
 - Extração automática de metadados (DOI, autor, título)
-- Detecção de palavras-chave relacionadas a lacunas de pesquisa
-- Análise semântica (sentence-transformers) para avaliar relevância
-- Exportação de resultados para Excel
+- Análise semântica (sentence-transformers) para avaliar relevância de parágrafos como lacunas de pesquisa
+- Verificação opcional com IA (Gemini API, BYOK) — comentário por parágrafo + relatório de análise
+- Exportação de resultados para Excel (inclui comentários da IA quando disponíveis)
 
 ## Instalação
 
@@ -61,9 +61,10 @@ Para rodar os testes: `pytest tests/ -v`
 ## Uso
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
-2. O sistema identifica parágrafos contendo palavras-chave relacionadas a lacunas de pesquisa
-3. Cada parágrafo recebe um "Insight Score" calculado via similaridade semântica (0.0-1.0)
-4. Os resultados podem ser visualizados na interface ou exportados para Excel
+2. O sistema identifica parágrafos com potenciais lacunas de pesquisa via similaridade semântica
+3. Cada parágrafo recebe um "Insight Score" (0.0–1.0) — quanto maior, mais similar a padrões de lacunas conhecidos
+4. (Opcional) Insira sua chave da API Gemini para verificar os resultados com IA — cada parágrafo recebe um comentário curto e um relatório geral é gerado
+5. Os resultados podem ser visualizados na interface ou exportados para Excel
 
 ## Variáveis de Ambiente
 

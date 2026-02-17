@@ -507,3 +507,120 @@ tr:nth-child(even) {
 .drop-zone-link:hover {
     color: #ffcc00;
 }
+
+/* LLM Toggle Bar */
+.llm-toggle {
+    margin: 15px 0 0;
+    padding: 10px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #555;
+    user-select: none;
+    transition: background-color 0.15s;
+}
+
+.llm-toggle:hover {
+    background-color: #e8e8e8;
+    color: #1e2a78;
+    border-color: #1e2a78;
+}
+
+/* LLM Analysis Section (collapsed by default) */
+.llm-section {
+    padding: 15px;
+    background-color: #fafafa;
+    border: 1px solid #ccc;
+    border-top: none;
+    border-radius: 0 0 5px 5px;
+}
+
+.llm-description {
+    font-size: 13px;
+    color: #777;
+    margin: 0 0 10px;
+}
+
+.llm-description a {
+    color: #1e2a78;
+}
+
+.llm-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.api-key-input {
+    flex: 1;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: monospace;
+    box-sizing: border-box;
+}
+
+.api-key-input:focus {
+    border-color: #1e2a78;
+    outline: none;
+}
+
+.llm-button {
+    height: 32px;
+    font-size: 13px;
+    padding: 0 16px;
+    white-space: nowrap;
+    box-sizing: border-box;
+    line-height: 30px;
+}
+
+#llm-progress {
+    margin-top: 10px;
+    color: #1e2a78;
+    font-size: 13px;
+}
+
+#llm-error {
+    margin-top: 10px;
+    padding: 8px;
+    background-color: #ffebee;
+    border-left: 3px solid #d32f2f;
+    border-radius: 3px;
+}
+
+#llm-error-msg {
+    color: #d32f2f;
+    margin: 0;
+    font-size: 13px;
+}
+
+/* LLM Report Section */
+.llm-report-section {
+    margin: 10px 0;
+    padding: 15px;
+    background-color: #fff;
+    border: 1px solid #1e2a78;
+    border-radius: 5px;
+}
+
+.llm-report-content {
+    line-height: 1.6;
+    color: #333;
+    padding: 10px;
+    background-color: #fafafa;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+/* LLM comment column in table */
+.comment-cell {
+    max-width: 250px;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.4;
+}

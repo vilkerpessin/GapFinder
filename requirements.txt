@@ -6,6 +6,7 @@ click==8.1.7
 colorama==0.4.6
 cryptography==42.0.5
 Flask==3.0.3
+google-genai>=1.0.0
 gunicorn==22.0.0
 idna==3.7
 itsdangerous==2.2.0
