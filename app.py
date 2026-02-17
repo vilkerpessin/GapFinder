@@ -1,494 +1,199 @@
-import gc
+"""GapFinder 2.0 — RAG-powered research gap detector."""
+
 import io
-import json
-import os
-import tempfile
-import threading
-import time
-import uuid
 
 import pandas as pd
-from flask import Flask, Response, jsonify, render_template, request, send_file
+import streamlit as st
 
-import logging
+from pdf_extractor import extract_metadata
+from rag_engine import GapFinderAI
 
-from pdf_extractor import extract_metadata, extract_text_by_page
-from gap_analyzer import analyze_pages
-from llm_analyzer import analyze_gaps, generate_report
-from google.genai import errors as genai_errors
+st.set_page_config(page_title="GapFinder", page_icon="🔍", layout="wide")
 
-logger = logging.getLogger(__name__)
-
-
-app = Flask(__name__)
-
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
-
-RESULTS_DIR = os.path.join(tempfile.gettempdir(), "gapfinder_results")
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB per file
-MAX_TOTAL_SIZE = 50 * 1024 * 1024  # 50MB total
-
-# SSE job state — shared between request threads and background processing threads
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+GAP_TYPE_COLORS = {
+    "Methodological": "red",
+    "Theoretical": "orange",
+    "Contextual": "blue",
+    "Empirical": "green",
+}
 
 
-def _is_valid_hex_id(hex_id: str) -> bool:
-    return len(hex_id) == 32 and all(c in '0123456789abcdef' for c in hex_id)
+# ── Sidebar ──────────────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.title("GapFinder")
+    st.caption("AI-powered research gap detector")
+
+    st.divider()
+
+    mode = st.radio(
+        "Analysis Mode",
+        options=["Cloud (Gemini)", "Local LLM (Experimental)"],
+        help="Cloud requires a free Gemini API key. Local runs Qwen 2.5-3B on CPU (~5-10 min per PDF).",
+    )
+
+    api_key = ""
+    if mode == "Cloud (Gemini)":
+        api_key = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="Enter your API key",
+        )
+
+    st.divider()
+    st.subheader("System Status")
+    if mode == "Cloud (Gemini)":
+        if api_key:
+            st.info("Model: Gemini 2.5 Flash Lite (Cloud)")
+        else:
+            st.warning("Waiting for API key...")
+    else:
+        st.warning("Model: Qwen 2.5-3B (Local CPU — Slow)")
 
 
-def _push_progress(job_id: str, message: str, event: str = "progress") -> None:
-    with _jobs_lock:
-        if job_id in _jobs:
-            _jobs[job_id]["progress"].append({"event": event, "data": message})
+# ── Main Interface ───────────────────────────────────────────────────────────
 
+st.header("Upload Papers")
+uploaded_files = st.file_uploader(
+    "Upload one or more academic PDFs",
+    type=["pdf"],
+    accept_multiple_files=True,
+)
 
-def _cleanup_stale_jobs(max_age: int = 3600) -> None:
-    now = time.time()
-    with _jobs_lock:
-        stale = [jid for jid, j in _jobs.items() if now - j["created_at"] > max_age]
-        for jid in stale:
-            for path in _jobs[jid].get("files", []):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-            job_dir = _jobs[jid].get("job_dir")
-            if job_dir:
-                try:
-                    os.rmdir(job_dir)
-                except OSError:
-                    pass
-            del _jobs[jid]
+analyze_clicked = st.button(
+    "Analyze Papers",
+    type="primary",
+    disabled=not uploaded_files or (mode == "Cloud (Gemini)" and not api_key),
+)
 
-
-def _process_job(job_id: str, saved_files: list[tuple[str, str]]) -> None:
-    """Process uploaded PDFs in background, pushing SSE progress events."""
-    data = []
-    files_analyzed = 0
-    total_files = len(saved_files)
+if analyze_clicked:
+    engine_mode = "cloud" if mode == "Cloud (Gemini)" else "local"
 
     try:
-        for file_idx, (filename, filepath) in enumerate(saved_files, 1):
-            _push_progress(job_id, f"Processing file {file_idx} of {total_files}: {filename}")
+        engine = GapFinderAI(
+            mode=engine_mode,
+            api_key=api_key if engine_mode == "cloud" else None,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        st.error(str(e))
+        st.stop()
 
-            with open(filepath, 'rb') as f:
-                file_content = f.read()
-            file_stream = io.BytesIO(file_content)
+    all_results: dict[str, dict] = {}
 
+    for uploaded_file in uploaded_files:
+        pdf_bytes = uploaded_file.read()
+        filename = uploaded_file.name
+
+        with st.status(f"Analyzing: {filename}", expanded=True) as status:
+            st.write("Extracting metadata...")
             try:
-                metadata = extract_metadata(file_stream)
+                metadata = extract_metadata(io.BytesIO(pdf_bytes))
             except Exception:
-                _push_progress(job_id, f"Skipping {filename}: could not read metadata")
+                st.error(f"Could not read {filename}")
+                status.update(label=f"{filename}: failed", state="error")
                 continue
 
-            file_stream.seek(0)
-            _push_progress(job_id, "Extracting text...")
-
-            try:
-                pages = extract_text_by_page(file_stream)
-                paragraphs = analyze_pages(
-                    pages,
-                    progress_callback=lambda msg: _push_progress(job_id, msg)
-                )
-            except Exception:
-                _push_progress(job_id, f"Skipping {filename}: analysis failed")
+            st.write("Ingesting PDF and building vector store...")
+            num_chunks = engine.ingest_pdf(pdf_bytes, filename)
+            if num_chunks == 0:
+                st.warning(f"No text extracted from {filename}")
+                status.update(label=f"{filename}: no text found", state="error")
                 continue
 
-            files_analyzed += 1
+            st.write(f"Retrieving context from {num_chunks} chunks...")
+            st.write("Generating insights with LLM...")
+            try:
+                gaps = engine.analyze_gaps(progress_callback=st.write)
+            except Exception as e:
+                st.error(f"Analysis failed: {e}")
+                status.update(label=f"{filename}: analysis error", state="error")
+                continue
+            finally:
+                engine.cleanup()
 
-            for page, paragraph, insight in paragraphs:
-                data.append({
+            all_results[filename] = {
+                "metadata": metadata,
+                "gaps": gaps,
+            }
+            status.update(
+                label=f"{filename}: {len(gaps)} gap(s) found",
+                state="complete",
+            )
+
+    # Store results in session state for persistence across reruns
+    if all_results:
+        st.session_state["results"] = all_results
+
+
+# ── Results Display ──────────────────────────────────────────────────────────
+
+if "results" in st.session_state and st.session_state["results"]:
+    results = st.session_state["results"]
+
+    st.divider()
+    st.header("Results")
+
+    tabs = st.tabs(list(results.keys()))
+
+    export_rows = []
+
+    for tab, (filename, result) in zip(tabs, results.items()):
+        gaps = result["gaps"]
+        metadata = result["metadata"]
+
+        with tab:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Gaps Found", len(gaps))
+            col2.metric("Pages", metadata.get("num_pages", "?"))
+            col3.metric("DOI", metadata.get("doi") or "N/A")
+
+            if not gaps:
+                st.info("No research gaps identified in this paper.")
+                continue
+
+            for i, gap in enumerate(gaps, 1):
+                gap_type = gap.get("type", "Unknown")
+                color = GAP_TYPE_COLORS.get(gap_type, "gray")
+
+                with st.expander(f"Gap {i}: {gap.get('description', '')[:80]}"):
+                    st.markdown(f":{color}[**{gap_type}**]")
+                    st.markdown(f"**Description:** {gap['description']}")
+                    st.markdown(f"> *\"{gap['evidence']}\"*")
+                    st.markdown(f"**Suggestion:** {gap['suggestion']}")
+
+                export_rows.append({
                     "file": filename,
-                    "doi": metadata["doi"],
-                    "author": metadata["author"],
-                    "title": metadata["title"],
-                    "keywords": metadata.get("keywords", ""),
-                    "page": page,
-                    "paragraph": paragraph,
-                    "insight": insight
+                    "title": metadata.get("title", ""),
+                    "doi": metadata.get("doi", ""),
+                    "type": gap_type,
+                    "description": gap.get("description", ""),
+                    "evidence": gap.get("evidence", ""),
+                    "suggestion": gap.get("suggestion", ""),
                 })
 
-            del file_content, file_stream, paragraphs
+    # ── Export ────────────────────────────────────────────────────────────
 
-        gc.collect()
-
-        result_id = uuid.uuid4().hex
-        files_with_gaps = len(set(row["file"] for row in data))
-
-        if data:
-            xlsx_path = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
-            df = pd.DataFrame(data)
-            with pd.ExcelWriter(xlsx_path, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
-
-        # Save result data as JSON for the /result page
-        json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
-        with open(json_path, 'w') as f:
-            json.dump({
-                "data": data,
-                "files_analyzed": files_analyzed,
-                "files_with_gaps": files_with_gaps,
-            }, f)
-
-        with _jobs_lock:
-            _jobs[job_id]["status"] = "complete"
-            _jobs[job_id]["result_id"] = result_id
-
-        _push_progress(job_id, json.dumps({"result_id": result_id}), event="complete")
-
-    except Exception as e:
-        with _jobs_lock:
-            _jobs[job_id]["status"] = "error"
-            _jobs[job_id]["error_message"] = str(e)
-        _push_progress(job_id, str(e), event="error")
-
-    finally:
-        # Clean up uploaded temp files
-        with _jobs_lock:
-            job = _jobs.get(job_id)
-            if job:
-                for path in job.get("files", []):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-                job_dir = job.get("job_dir")
-                if job_dir:
-                    try:
-                        os.rmdir(job_dir)
-                    except OSError:
-                        pass
-
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    return render_template('index.html')
-
-
-@app.route('/upload', methods=['POST'])
-def upload_files():
-    _cleanup_stale_jobs()
-
-    files = request.files.getlist('pdf_files')
-    total_size = 0
-    saved_files = []
-
-    job_id = uuid.uuid4().hex
-    job_dir = os.path.join(tempfile.gettempdir(), f"gapfinder_upload_{job_id}")
-    os.makedirs(job_dir, exist_ok=True)
-
-    for file in files:
-        if not file.filename.endswith('.pdf'):
-            continue
-
-        file_content = file.read()
-        file_size = len(file_content)
-
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({
-                "error": f"File '{file.filename}' is too large "
-                         f"({file_size / 1024 / 1024:.1f}MB). "
-                         f"Maximum size is {MAX_FILE_SIZE / 1024 / 1024:.0f}MB per file."
-            }), 400
-
-        total_size += file_size
-        if total_size > MAX_TOTAL_SIZE:
-            return jsonify({
-                "error": f"Total file size exceeds "
-                         f"{MAX_TOTAL_SIZE / 1024 / 1024:.0f}MB limit. "
-                         "Please upload fewer or smaller files."
-            }), 400
-
-        filepath = os.path.join(job_dir, file.filename)
-        with open(filepath, 'wb') as f:
-            f.write(file_content)
-        saved_files.append((file.filename, filepath))
-
-    if not saved_files:
-        return jsonify({"error": "No valid PDF files uploaded."}), 400
-
-    with _jobs_lock:
-        _jobs[job_id] = {
-            "status": "processing",
-            "progress": [],
-            "result_id": None,
-            "error_message": None,
-            "files": [fp for _, fp in saved_files],
-            "job_dir": job_dir,
-            "created_at": time.time(),
-        }
-
-    thread = threading.Thread(target=_process_job, args=(job_id, saved_files), daemon=True)
-    thread.start()
-
-    return jsonify({"job_id": job_id})
-
-
-@app.route('/progress/<job_id>')
-def progress_stream(job_id):
-    if not _is_valid_hex_id(job_id):
-        return "Invalid job ID.", 400
-
-    with _jobs_lock:
-        if job_id not in _jobs:
-            return "Job not found.", 404
-
-    def generate():
-        cursor = 0
-        while True:
-            with _jobs_lock:
-                job = _jobs.get(job_id)
-                if not job:
-                    break
-                events = job["progress"][cursor:]
-                cursor += len(events)
-                status = job["status"]
-
-            for evt in events:
-                yield f"event: {evt['event']}\ndata: {evt['data']}\n\n"
-
-            if status in ("complete", "error"):
-                break
-
-            time.sleep(0.5)
-
-    return Response(
-        generate(),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no',
-        }
-    )
-
-
-@app.route('/result/<result_id>')
-def show_result(result_id):
-    if not _is_valid_hex_id(result_id):
-        return "Invalid result ID.", 400
-
-    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
-    if not os.path.isfile(json_path):
-        return "Results not found. They may have expired.", 404
-
-    with open(json_path, 'r') as f:
-        result = json.load(f)
-
-    return render_template(
-        'result.html',
-        data=result["data"],
-        files_analyzed=result["files_analyzed"],
-        result_id=result_id,
-        llm_analysis=result.get("llm_analysis"),
-    )
-
-
-@app.route('/analyze-llm/<result_id>', methods=['POST'])
-def analyze_with_llm(result_id):
-    """Run LLM gap verification and report generation on existing results."""
-    if not _is_valid_hex_id(result_id):
-        return jsonify({"error": "Invalid result ID."}), 400
-
-    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
-    if not os.path.isfile(json_path):
-        return jsonify({"error": "Results not found. They may have expired."}), 404
-
-    api_key = (request.json or {}).get("api_key", "").strip()
-    if not api_key:
-        return jsonify({"error": "API key is required."}), 400
-
-    with open(json_path, 'r') as f:
-        result = json.load(f)
-
-    if not result["data"]:
-        return jsonify({"error": "No gaps to analyze."}), 400
-
-    try:
-        analyzed = analyze_gaps(api_key, result["data"])
-
-        seen_files = set()
-        paper_metadata = []
-        for row in result["data"]:
-            if row["file"] not in seen_files:
-                seen_files.add(row["file"])
-                paper_metadata.append({
-                    "title": row.get("title", ""),
-                    "author": row.get("author", ""),
-                    "doi": row.get("doi", ""),
-                })
-
-        report = generate_report(api_key, analyzed, paper_metadata)
-
-        result["llm_analysis"] = {
-            "analyzed_gaps": analyzed,
-            "report": report,
-        }
-
-        with open(json_path, 'w') as f:
-            json.dump(result, f)
-
-        # Regenerate Excel with LLM comment column
-        xlsx_path = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
-        comment_map = {
-            (g["file"], g["page"], g["paragraph"][:80]): g.get("llm_comment", "")
-            for g in analyzed
-        }
-        export_rows = []
-        for row in result["data"]:
-            key = (row["file"], row["page"], row["paragraph"][:80])
-            export_rows.append({
-                **row,
-                "llm_comment": comment_map.get(key, ""),
-            })
+    if export_rows:
+        st.divider()
         df = pd.DataFrame(export_rows)
-        with pd.ExcelWriter(xlsx_path, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
 
-        return jsonify({
-            "success": True,
-            "analyzed_gaps": analyzed,
-            "report": report,
-        })
+        col_csv, col_xlsx = st.columns(2)
 
-    except genai_errors.ClientError as e:
-        if e.code == 401 or e.code == 403:
-            return jsonify({"error": "Invalid API key. Check your Gemini API key and try again."}), 401
-        if e.code == 429:
-            return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
-        return jsonify({"error": f"AI analysis failed: {e.message or e}"}), 400
-
-    except genai_errors.ServerError as e:
-        return jsonify({"error": "Gemini API is temporarily unavailable. Try again later."}), 502
-
-    except Exception as e:
-        return jsonify({"error": f"AI analysis failed: {e}"}), 500
-
-
-@app.route('/download-report/<result_id>')
-def download_report(result_id):
-    """Download the LLM-generated research analysis report as Markdown."""
-    if not _is_valid_hex_id(result_id):
-        return "Invalid result ID.", 400
-
-    json_path = os.path.join(RESULTS_DIR, f"{result_id}.json")
-    if not os.path.isfile(json_path):
-        return "Results not found.", 404
-
-    with open(json_path, 'r') as f:
-        result = json.load(f)
-
-    llm = result.get("llm_analysis")
-    if not llm or not llm.get("report"):
-        return "No AI report available. Run AI analysis first.", 400
-
-    return send_file(
-        io.BytesIO(llm["report"].encode("utf-8")),
-        mimetype="text/markdown",
-        as_attachment=True,
-        download_name="gapfinder_report.md",
-    )
-
-
-@app.route('/process', methods=['POST'])
-def process_files():
-    files = request.files.getlist('pdf_files')
-    data = []
-    total_size = 0
-    files_analyzed = 0
-
-    for file in files:
-        if not file.filename.endswith('.pdf'):
-            continue
-
-        file_content = file.read()
-        file_size = len(file_content)
-
-        if file_size > MAX_FILE_SIZE:
-            return (
-                f"Error: File '{file.filename}' is too large "
-                f"({file_size / 1024 / 1024:.1f}MB). "
-                f"Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB per file.",
-                400
+        with col_csv:
+            st.download_button(
+                label="Download CSV",
+                data=df.to_csv(index=False),
+                file_name="gapfinder_results.csv",
+                mime="text/csv",
             )
 
-        total_size += file_size
-        if total_size > MAX_TOTAL_SIZE:
-            return (
-                f"Error: Total file size exceeds "
-                f"{MAX_TOTAL_SIZE / 1024 / 1024}MB limit. "
-                "Please upload fewer or smaller files.",
-                400
+        with col_xlsx:
+            xlsx_buffer = io.BytesIO()
+            with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
+                df.to_excel(writer, index=False, sheet_name="Gaps")
+            st.download_button(
+                label="Download Excel",
+                data=xlsx_buffer.getvalue(),
+                file_name="gapfinder_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-
-        file_stream = io.BytesIO(file_content)
-
-        try:
-            metadata = extract_metadata(file_stream)
-        except Exception:
-            continue
-
-        file_stream.seek(0)
-        try:
-            pages = extract_text_by_page(file_stream)
-            paragraphs = analyze_pages(pages)
-        except Exception:
-            continue
-
-        files_analyzed += 1
-
-        for page, paragraph, insight in paragraphs:
-            data.append({
-                "file": file.filename,
-                "doi": metadata["doi"],
-                "author": metadata["author"],
-                "title": metadata["title"],
-                "keywords": metadata.get("keywords", ""),
-                "page": page,
-                "paragraph": paragraph,
-                "insight": insight
-            })
-
-        del file_content, file_stream, paragraphs
-
-    gc.collect()
-    files_with_gaps = len(set(row["file"] for row in data))
-
-    result_id = uuid.uuid4().hex
-    if data:
-        filepath = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
-        df = pd.DataFrame(data)
-        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
-
-    return render_template(
-        'result.html',
-        data=data,
-        files_analyzed=files_analyzed,
-        files_with_gaps=files_with_gaps,
-        result_id=result_id
-    )
-
-
-@app.route('/download/<result_id>')
-def download(result_id):
-    if not _is_valid_hex_id(result_id):
-        return "Invalid download link.", 400
-
-    filepath = os.path.join(RESULTS_DIR, f"{result_id}.xlsx")
-    if not os.path.isfile(filepath):
-        return "No results available for download. Please process your files first.", 400
-
-    return send_file(
-        filepath,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True,
-        download_name='results.xlsx'
-    )
-
-
-if __name__ == '__main__':
-    debug_mode = os.environ.get("FLASK_ENV") != "production"
-    app.run(host="0.0.0.0", port=7860, debug=debug_mode)
