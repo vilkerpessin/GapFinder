@@ -77,7 +77,9 @@ class GapFinderAI:
                 model_path=model_path,
                 n_gpu_layers=-1,
                 n_ctx=4096,
-                max_tokens=1024,
+                max_tokens=2048,
+                temperature=0.1,
+                stop=["<|im_end|>"],
                 verbose=False,
             )
         else:
@@ -147,7 +149,14 @@ class GapFinderAI:
         prompt = GAP_ANALYSIS_PROMPT.format(chunks=chunks_text)
 
         if self.mode == "local":
-            raw = self._llm.invoke(prompt)
+            # Qwen 2.5 expects ChatML format
+            chat_prompt = (
+                "<|im_start|>system\nYou are a helpful assistant that outputs valid JSON.<|im_end|>\n"
+                f"<|im_start|>user\n{prompt}<|im_end|>\n"
+                "<|im_start|>assistant\n"
+            )
+            raw = self._llm.invoke(chat_prompt)
+            logger.info("Local LLM raw output (first 500 chars): %s", raw[:500])
         else:
             raw = self._call_gemini(prompt, progress_callback)
 
@@ -202,6 +211,7 @@ def _parse_retry_delay(error_msg: str, default: int = 40) -> int:
 
 def _parse_gaps_json(raw: str) -> list[dict]:
     """Extract JSON array from LLM response, tolerating markdown fences."""
+    logger.info("Parsing LLM output (%d chars)", len(raw))
     # Strip markdown code fences if present
     cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip()
     cleaned = re.sub(r"```\s*$", "", cleaned).strip()
