@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+import torch
+
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import LlamaCpp
@@ -69,9 +71,11 @@ class GapFinderAI:
                     raise FileNotFoundError(
                         f"GGUF model not found at {LOCAL_MODEL_PATH} or {local_path}"
                     )
+            if not torch.cuda.is_available():
+                raise RuntimeError("Local mode requires a GPU. Use Cloud (Gemini) instead.")
             self._llm = LlamaCpp(
                 model_path=model_path,
-                n_gpu_layers=0,
+                n_gpu_layers=-1,
                 n_ctx=4096,
                 max_tokens=1024,
                 verbose=False,

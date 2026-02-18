@@ -21,17 +21,19 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 - **Orquestração**: LangChain
 - **Vector Store**: ChromaDB (ephemeral)
 - **Embeddings**: paraphrase-multilingual-MiniLM-L12-v2 (50+ idiomas)
-- **LLM Local**: Qwen 2.5-3B-Instruct (GGUF q4_k_m) via llama-cpp-python
+- **LLM Local**: Qwen 2.5-3B-Instruct (GGUF q4_k_m) via llama-cpp-python (requer GPU)
 - **LLM Cloud**: Gemini 2.5 Flash Lite (BYOK — traga sua própria chave)
 - **Extração de PDF**: PyMuPDF
 - **Exportação**: pandas + XlsxWriter (CSV/Excel)
+- **GPU**: NVIDIA CUDA 12.1 (T4 ou superior)
 
 ## Funcionalidades
 
 - Upload e processamento de múltiplos PDFs simultaneamente
 - Extração automática de metadados (DOI, autor, título)
 - Pipeline RAG: chunking → retrieval semântico → análise por LLM
-- Dois modos de análise: **Local** (Qwen 2.5-3B, gratuito, privado) ou **Cloud** (Gemini API, BYOK)
+- Dois modos de análise: **Local** (Qwen 2.5-3B, requer GPU) ou **Cloud** (Gemini API, BYOK)
+- Detecção automática de GPU — modo Local habilitado apenas com CUDA disponível
 - Classificação estruturada de lacunas: tipo, descrição, evidência, sugestão
 - Exportação de resultados para CSV e Excel
 
@@ -70,8 +72,8 @@ Para rodar os testes: `pytest tests/ -v`
 ## Uso
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
-2. Escolha o modo de análise na barra lateral: **Local LLM** ou **Cloud (Gemini)**
-3. Se Cloud, insira sua chave da API Gemini
+2. Escolha o modo de análise na barra lateral: **Local LLM** (requer GPU) ou **Cloud (Gemini)**
+3. Se Cloud, insira sua chave da API Gemini (obtenha gratuitamente em [Google AI Studio](https://aistudio.google.com/app/apikey))
 4. Clique em "Analyze Papers" — o sistema ingere o PDF, recupera contexto relevante e gera insights via LLM
 5. Cada lacuna identificada inclui: tipo, descrição, citação do texto e sugestão de pesquisa
 6. Exporte os resultados para CSV ou Excel

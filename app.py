@@ -4,6 +4,7 @@ import io
 
 import pandas as pd
 import streamlit as st
+import torch
 
 from pdf_extractor import extract_metadata
 from rag_engine import GapFinderAI
@@ -26,10 +27,12 @@ with st.sidebar:
 
     st.divider()
 
+    _gpu = torch.cuda.is_available()
+
     mode = st.radio(
         "Analysis Mode",
-        options=["Cloud (Gemini)", "Local LLM (Experimental)"],
-        help="Cloud requires a free Gemini API key. Local runs Qwen 2.5-3B on CPU (~5-10 min per PDF).",
+        options=["Cloud (Gemini)", "Local LLM (Qwen 2.5-3B)"],
+        help="Cloud requires a free Gemini API key. Local runs Qwen 2.5-3B on GPU (~10-30s per PDF).",
     )
 
     api_key = ""
@@ -39,6 +42,9 @@ with st.sidebar:
             type="password",
             placeholder="Enter your API key",
         )
+        st.caption("Don't have a key? [Get one free at Google AI Studio](https://aistudio.google.com/app/apikey)")
+    elif not _gpu:
+        st.warning("Local LLM requires a GPU. This environment has no GPU available.")
 
     st.divider()
     st.subheader("System Status")
@@ -47,8 +53,10 @@ with st.sidebar:
             st.info("Model: Gemini 2.5 Flash Lite (Cloud)")
         else:
             st.warning("Waiting for API key...")
+    elif _gpu:
+        st.info("Model: Qwen 2.5-3B (Local GPU)")
     else:
-        st.warning("Model: Qwen 2.5-3B (Local CPU — Slow)")
+        st.error("No GPU detected — Local LLM unavailable")
 
 
 # ── Main Interface ───────────────────────────────────────────────────────────
@@ -63,7 +71,9 @@ uploaded_files = st.file_uploader(
 analyze_clicked = st.button(
     "Analyze Papers",
     type="primary",
-    disabled=not uploaded_files or (mode == "Cloud (Gemini)" and not api_key),
+    disabled=not uploaded_files
+    or (mode == "Cloud (Gemini)" and not api_key)
+    or (mode != "Cloud (Gemini)" and not _gpu),
 )
 
 if analyze_clicked:
