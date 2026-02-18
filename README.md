@@ -15,13 +15,27 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 
 **Artigo científico:** https://www.scholink.org/ojs/index.php/selt/article/view/55751
 
+## Stack Tecnológico
+
+- **Frontend**: Streamlit
+- **Orquestração**: LangChain
+- **Vector Store**: ChromaDB (ephemeral)
+- **Embeddings**: paraphrase-multilingual-MiniLM-L12-v2 (50+ idiomas)
+- **LLM Local**: Qwen 2.5-3B-Instruct (GGUF q4_k_m) via llama-cpp-python (requer GPU)
+- **LLM Cloud**: Gemini 2.5 Flash Lite (BYOK — traga sua própria chave)
+- **Extração de PDF**: PyMuPDF
+- **Exportação**: pandas + XlsxWriter (CSV/Excel)
+- **GPU**: NVIDIA CUDA 12.1 (T4 ou superior)
+
 ## Funcionalidades
 
 - Upload e processamento de múltiplos PDFs simultaneamente
 - Extração automática de metadados (DOI, autor, título)
-- Análise semântica (sentence-transformers) para avaliar relevância de parágrafos como lacunas de pesquisa
-- Verificação opcional com IA (Gemini API, BYOK) — comentário por parágrafo + relatório de análise
-- Exportação de resultados para Excel (inclui comentários da IA quando disponíveis)
+- Pipeline RAG: chunking → retrieval semântico → análise por LLM
+- Dois modos de análise: **Local** (Qwen 2.5-3B, requer GPU) ou **Cloud** (Gemini API, BYOK)
+- Detecção automática de GPU — modo Local habilitado apenas com CUDA disponível
+- Classificação estruturada de lacunas: tipo, descrição, evidência, sugestão
+- Exportação de resultados para CSV e Excel
 
 ## Instalação
 
@@ -39,19 +53,16 @@ source venv/bin/activate  # No Windows: venv\Scripts\activate
 # Instale as dependências
 pip install -r requirements.txt
 
-# Configure a SECRET_KEY (obrigatório para produção)
-# Gere uma chave segura:
-python -c "import secrets; print(secrets.token_hex(32))"
-
-# Copie o arquivo de exemplo e configure:
-cp .env.example .env
-# Edite .env e substitua SECRET_KEY pelo valor gerado acima
+# (Modo local) Baixe o modelo GGUF:
+mkdir -p models
+# Baixe qwen2.5-3b-instruct-q4_k_m.gguf de Qwen/Qwen2.5-3B-Instruct-GGUF no Hugging Face
+# e coloque em models/
 ```
 
 ### Executar Localmente
 
 ```bash
-python app.py
+streamlit run app.py --server.port=7860
 ```
 
 Acesse: `http://localhost:7860`
@@ -61,16 +72,11 @@ Para rodar os testes: `pytest tests/ -v`
 ## Uso
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
-2. O sistema identifica parágrafos com potenciais lacunas de pesquisa via similaridade semântica
-3. Cada parágrafo recebe um "Insight Score" (0.0–1.0) — quanto maior, mais similar a padrões de lacunas conhecidos
-4. (Opcional) Insira sua chave da API Gemini para verificar os resultados com IA — cada parágrafo recebe um comentário curto e um relatório geral é gerado
-5. Os resultados podem ser visualizados na interface ou exportados para Excel
-
-## Variáveis de Ambiente
-
-- `SECRET_KEY`: Chave secreta do Flask (obrigatório em produção)
-- `FLASK_ENV`: Ambiente de execução (`development` ou `production`)
-
+2. Escolha o modo de análise na barra lateral: **Local LLM** (requer GPU) ou **Cloud (Gemini)**
+3. Se Cloud, insira sua chave da API Gemini (obtenha gratuitamente em [Google AI Studio](https://aistudio.google.com/app/apikey))
+4. Clique em "Analyze Papers" — o sistema ingere o PDF, recupera contexto relevante e gera insights via LLM
+5. Cada lacuna identificada inclui: tipo, descrição, citação do texto e sugestão de pesquisa
+6. Exporte os resultados para CSV ou Excel
 
 ## Autor
 
