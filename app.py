@@ -111,7 +111,15 @@ if analyze_clicked:
                 continue
 
             st.write("Ingesting PDF and building vector store...")
-            num_chunks = engine.ingest_pdf(pdf_bytes, filename)
+            try:
+                num_chunks = engine.ingest_pdf(pdf_bytes, filename)
+            except Exception as e:
+                if getattr(e, "code", None) == 429:
+                    st.error("Google API rate limit exceeded. Please wait a minute and try again.")
+                else:
+                    st.error(f"Could not process {filename}. Please try again.")
+                status.update(label=f"{filename}: failed", state="error")
+                continue
             if num_chunks == 0:
                 st.warning(f"No text extracted from {filename}")
                 status.update(label=f"{filename}: no text found", state="error")
@@ -122,7 +130,10 @@ if analyze_clicked:
             try:
                 gaps = engine.analyze_gaps(progress_callback=st.write)
             except Exception as e:
-                st.error(f"Analysis failed: {e}")
+                if getattr(e, "code", None) == 429:
+                    st.error("Google API rate limit exceeded. Please wait a minute and try again.")
+                else:
+                    st.error(f"Analysis failed for {filename}. Please try again.")
                 status.update(label=f"{filename}: analysis error", state="error")
                 continue
             finally:
@@ -149,46 +160,48 @@ if analyze_clicked:
 if "results" in st.session_state and st.session_state["results"]:
     results = st.session_state["results"]
 
-    st.divider()
-    st.header("Results")
+    total_gaps = sum(len(r["gaps"]) for r in results.values())
 
-    tabs = st.tabs(list(results.keys()))
+    st.divider()
+    st.header(f"Results — {total_gaps} gap(s) across {len(results)} paper(s)")
 
     export_rows = []
 
-    for tab, (filename, result) in zip(tabs, results.items()):
+    for idx, (filename, result) in enumerate(results.items()):
         gaps = result["gaps"]
         metadata = result["metadata"]
 
-        with tab:
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Gaps Found", len(gaps))
-            col2.metric("Pages", metadata.get("num_pages", "?"))
-            col3.metric("DOI", metadata.get("doi") or "N/A")
+        if idx > 0:
+            st.divider()
 
-            if not gaps:
-                st.info("No research gaps identified in this paper.")
-                continue
+        st.subheader(metadata.get("title") or filename)
+        col1, col2 = st.columns(2)
+        col1.metric("Gaps Found", len(gaps))
+        col2.metric("DOI", metadata.get("doi") or "N/A")
 
-            for i, gap in enumerate(gaps, 1):
-                gap_type = gap.get("type", "Unknown")
-                color = GAP_TYPE_COLORS.get(gap_type, "gray")
+        if not gaps:
+            st.info("No research gaps identified in this paper.")
+            continue
 
-                with st.expander(f"Gap {i}: {gap.get('description', '')[:80]}"):
-                    st.markdown(f":{color}[**{gap_type}**]")
-                    st.markdown(f"**Description:** {gap['description']}")
-                    st.markdown(f"> *\"{gap['evidence']}\"*")
-                    st.markdown(f"**Suggestion:** {gap['suggestion']}")
+        for i, gap in enumerate(gaps, 1):
+            gap_type = gap.get("type", "Unknown")
+            color = GAP_TYPE_COLORS.get(gap_type, "gray")
 
-                export_rows.append({
-                    "file": filename,
-                    "title": metadata.get("title", ""),
-                    "doi": metadata.get("doi", ""),
-                    "type": gap_type,
-                    "description": gap.get("description", ""),
-                    "evidence": gap.get("evidence", ""),
-                    "suggestion": gap.get("suggestion", ""),
-                })
+            with st.expander(f"Gap {i}: {gap.get('description', '')[:80]}"):
+                st.markdown(f":{color}[**{gap_type}**]")
+                st.markdown(f"**Description:** {gap['description']}")
+                st.markdown(f"> *\"{gap['evidence']}\"*")
+                st.markdown(f"**Suggestion:** {gap['suggestion']}")
+
+            export_rows.append({
+                "file": filename,
+                "title": metadata.get("title", ""),
+                "doi": metadata.get("doi", ""),
+                "type": gap_type,
+                "description": gap.get("description", ""),
+                "evidence": gap.get("evidence", ""),
+                "suggestion": gap.get("suggestion", ""),
+            })
 
     # ── Export ────────────────────────────────────────────────────────────
 
