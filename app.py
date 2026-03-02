@@ -1,10 +1,10 @@
-"""GapFinder 2.0 — RAG-powered research gap detector."""
+"""GapFinder — RAG-powered research gap detector."""
 
 import io
+import os
 
 import pandas as pd
 import streamlit as st
-import torch
 
 from pdf_extractor import extract_metadata
 from rag_engine import GapFinderAI
@@ -23,16 +23,16 @@ GAP_TYPE_COLORS = {
 
 with st.sidebar:
     st.title("GapFinder")
-    st.caption("AI-powered research gap detector")
+    st.caption("AI-powered research gap detector · **Beta** · [Report issues](https://github.com/vilkerpessin/GapFinder/issues)")
 
     st.divider()
 
-    _gpu = torch.cuda.is_available()
+    _modal_configured = bool(os.environ.get("MODAL_INFERENCE_URL"))
 
     mode = st.radio(
         "Analysis Mode",
-        options=["Cloud (Gemini)", "Local LLM (Qwen 2.5-3B)"],
-        help="Cloud requires a free Gemini API key. Local runs Qwen 2.5-3B on GPU (~10-30s per PDF).",
+        options=["Cloud (Gemini)", "Modal (Qwen 2.5-7B)"],
+        help="Cloud requires a free Gemini API key. Modal runs Qwen 2.5-7B on GPU (~10-30s per PDF, no key needed).",
     )
 
     api_key = ""
@@ -43,8 +43,8 @@ with st.sidebar:
             placeholder="Enter your API key",
         )
         st.caption("Don't have a key? [Get one free at Google AI Studio](https://aistudio.google.com/app/apikey)")
-    elif not _gpu:
-        st.warning("Local LLM requires a GPU. This environment has no GPU available.")
+    elif not _modal_configured:
+        st.warning("MODAL_INFERENCE_URL not set. Modal mode unavailable.")
 
     st.divider()
     st.subheader("System Status")
@@ -53,10 +53,10 @@ with st.sidebar:
             st.info("Model: Gemini 2.5 Flash Lite (Cloud)")
         else:
             st.warning("Waiting for API key...")
-    elif _gpu:
-        st.info("Model: Qwen 2.5-3B (Local GPU)")
+    elif _modal_configured:
+        st.info("Model: Qwen 2.5-7B (Modal)")
     else:
-        st.error("No GPU detected — Local LLM unavailable")
+        st.error("MODAL_INFERENCE_URL not configured")
 
 
 # ── Main Interface ───────────────────────────────────────────────────────────
@@ -68,25 +68,32 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
 )
 
+if "analyzing" not in st.session_state:
+    st.session_state.analyzing = False
+
 analyze_clicked = st.button(
     "Analyze Papers",
     type="primary",
-    disabled=not uploaded_files
+    disabled=st.session_state.analyzing
+    or not uploaded_files
     or (mode == "Cloud (Gemini)" and not api_key)
-    or (mode != "Cloud (Gemini)" and not _gpu),
+    or (mode == "Modal (Qwen 2.5-7B)" and not _modal_configured),
 )
 
 if analyze_clicked:
-    engine_mode = "cloud" if mode == "Cloud (Gemini)" else "local"
+    st.session_state.analyzing = True
+    engine_mode = "cloud" if mode == "Cloud (Gemini)" else "modal"
 
-    try:
-        engine = GapFinderAI(
-            mode=engine_mode,
-            api_key=api_key if engine_mode == "cloud" else None,
-        )
-    except (ValueError, FileNotFoundError) as e:
-        st.error(str(e))
-        st.stop()
+    with st.spinner("Initializing model..."):
+        try:
+            engine = GapFinderAI(
+                mode=engine_mode,
+                api_key=api_key if engine_mode == "cloud" else None,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            st.session_state.analyzing = False
+            st.error(str(e))
+            st.stop()
 
     all_results: dict[str, dict] = {}
 
@@ -129,6 +136,8 @@ if analyze_clicked:
                 label=f"{filename}: {len(gaps)} gap(s) found",
                 state="complete",
             )
+
+    st.session_state.analyzing = False
 
     # Store results in session state for persistence across reruns
     if all_results:

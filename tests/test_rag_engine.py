@@ -84,10 +84,17 @@ class TestGapFinderAIInit:
         mock_client.assert_called_once_with(api_key="test-key")
 
     @patch("rag_engine.HuggingFaceEmbeddings")
-    @patch("rag_engine.Path.exists", return_value=False)
-    def test_local_mode_raises_without_model(self, mock_exists, mock_embeddings):
-        with pytest.raises(FileNotFoundError, match="GGUF model not found"):
-            GapFinderAI(mode="local")
+    def test_modal_mode_requires_url(self, mock_embeddings, monkeypatch):
+        monkeypatch.delenv("MODAL_INFERENCE_URL", raising=False)
+        with pytest.raises(ValueError, match="MODAL_INFERENCE_URL"):
+            GapFinderAI(mode="modal")
+
+    @patch("rag_engine.HuggingFaceEmbeddings")
+    def test_modal_mode_initializes(self, mock_embeddings, monkeypatch):
+        monkeypatch.setenv("MODAL_INFERENCE_URL", "https://example.modal.run")
+        engine = GapFinderAI(mode="modal")
+        assert engine.mode == "modal"
+        assert engine._modal_url == "https://example.modal.run"
 
 
 # ── Ingestion ────────────────────────────────────────────────────────────────
@@ -164,6 +171,34 @@ class TestAnalyzeGaps:
         assert len(gaps) == 1
         assert gaps[0]["type"] == "Methodological"
         engine._gemini_client.models.generate_content.assert_called_once()
+
+    @patch("rag_engine.requests.post")
+    @patch("rag_engine.HuggingFaceEmbeddings")
+    def test_modal_analysis_calls_endpoint(self, mock_embeddings, mock_post, monkeypatch):
+        monkeypatch.setenv("MODAL_INFERENCE_URL", "https://example.modal.run")
+        engine = GapFinderAI(mode="modal")
+
+        mock_doc = MagicMock()
+        mock_doc.page_content = "This study has methodological limitations."
+        mock_doc.metadata = {"page": 1}
+        mock_vs = MagicMock()
+        mock_vs.similarity_search.return_value = [mock_doc]
+        engine._vectorstore = mock_vs
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"text": json.dumps([{
+            "type": "Methodological",
+            "description": "Small sample",
+            "evidence": "n=12",
+            "suggestion": "Increase sample",
+        }])}
+        mock_post.return_value = mock_response
+
+        gaps = engine.analyze_gaps()
+        assert len(gaps) == 1
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        assert call_kwargs[0][0] == "https://example.modal.run"
 
     @patch("rag_engine.HuggingFaceEmbeddings")
     @patch("rag_engine.genai.Client")

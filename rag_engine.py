@@ -2,17 +2,17 @@
 
 import json
 import logging
+import os
 import re
 import tempfile
 import time
 from pathlib import Path
 from typing import Callable
 
-import torch
+import requests
 
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import LlamaCpp
 from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -22,7 +22,6 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MODEL_PATH = "/app/models/qwen2.5-3b-instruct-q4_k_m.gguf"
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
@@ -48,11 +47,11 @@ Text chunks:
 
 
 class GapFinderAI:
-    """RAG-based research gap detector using local or cloud LLM."""
+    """RAG-based research gap detector using Modal (Qwen 2.5-7B) or Gemini."""
 
-    def __init__(self, mode: str = "local", api_key: str | None = None):
-        if mode not in ("local", "cloud"):
-            raise ValueError(f"Invalid mode: {mode!r}. Use 'local' or 'cloud'.")
+    def __init__(self, mode: str = "modal", api_key: str | None = None):
+        if mode not in ("modal", "cloud"):
+            raise ValueError(f"Invalid mode: {mode!r}. Use 'modal' or 'cloud'.")
         if mode == "cloud" and not api_key:
             raise ValueError("Cloud mode requires a Gemini API key.")
 
@@ -60,28 +59,13 @@ class GapFinderAI:
         self._embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         self._vectorstore: Chroma | None = None
 
-        if mode == "local":
-            model_path = LOCAL_MODEL_PATH
-            # Fall back to local dev path if HF Spaces path doesn't exist
-            if not Path(model_path).exists():
-                local_path = Path("models/qwen2.5-3b-instruct-q4_k_m.gguf")
-                if local_path.exists():
-                    model_path = str(local_path)
-                else:
-                    raise FileNotFoundError(
-                        f"GGUF model not found at {LOCAL_MODEL_PATH} or {local_path}"
-                    )
-            if not torch.cuda.is_available():
-                raise RuntimeError("Local mode requires a GPU. Use Cloud (Gemini) instead.")
-            self._llm = LlamaCpp(
-                model_path=model_path,
-                n_gpu_layers=-1,
-                n_ctx=4096,
-                max_tokens=2048,
-                temperature=0.1,
-                stop=["<|im_end|>"],
-                verbose=False,
-            )
+        if mode == "modal":
+            modal_url = os.environ.get("MODAL_INFERENCE_URL")
+            if not modal_url:
+                raise ValueError(
+                    "Modal mode requires MODAL_INFERENCE_URL environment variable."
+                )
+            self._modal_url = modal_url
         else:
             self._gemini_client = genai.Client(api_key=api_key)
 
@@ -148,19 +132,22 @@ class GapFinderAI:
 
         prompt = GAP_ANALYSIS_PROMPT.format(chunks=chunks_text)
 
-        if self.mode == "local":
-            # Qwen 2.5 expects ChatML format
-            chat_prompt = (
-                "<|im_start|>system\nYou are a helpful assistant that outputs valid JSON.<|im_end|>\n"
-                f"<|im_start|>user\n{prompt}<|im_end|>\n"
-                "<|im_start|>assistant\n"
-            )
-            raw = self._llm.invoke(chat_prompt)
-            logger.info("Local LLM raw output (first 500 chars): %s", raw[:500])
+        if self.mode == "modal":
+            raw = self._call_modal(prompt)
         else:
             raw = self._call_gemini(prompt, progress_callback)
 
         return _parse_gaps_json(raw)
+
+    def _call_modal(self, prompt: str) -> str:
+        """Call Modal inference endpoint for Qwen 2.5-7B generation."""
+        response = requests.post(
+            self._modal_url,
+            json={"prompt": prompt, "max_new_tokens": 2048},
+            timeout=300,
+        )
+        response.raise_for_status()
+        return response.json()["text"]
 
     def _call_gemini(
         self,
