@@ -21,19 +21,17 @@ O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial d
 - **Orquestração**: LangChain
 - **Vector Store**: ChromaDB (ephemeral)
 - **Embeddings**: paraphrase-multilingual-MiniLM-L12-v2 (50+ idiomas)
-- **LLM Local**: Qwen 2.5-3B-Instruct (GGUF q4_k_m) via llama-cpp-python (requer GPU)
+- **LLM Modal**: Qwen 2.5-7B-Instruct via Modal.com (A10G GPU, sem necessidade de chave)
 - **LLM Cloud**: Gemini 2.5 Flash Lite (BYOK — traga sua própria chave)
 - **Extração de PDF**: PyMuPDF
 - **Exportação**: pandas + XlsxWriter (CSV/Excel)
-- **GPU**: NVIDIA CUDA 12.1 (T4 ou superior)
 
 ## Funcionalidades
 
 - Upload e processamento de múltiplos PDFs simultaneamente
 - Extração automática de metadados (DOI, autor, título)
 - Pipeline RAG: chunking → retrieval semântico → análise por LLM
-- Dois modos de análise: **Local** (Qwen 2.5-3B, requer GPU) ou **Cloud** (Gemini API, BYOK)
-- Detecção automática de GPU — modo Local habilitado apenas com CUDA disponível
+- Dois modos de análise: **Modal** (Qwen 2.5-7B, sem GPU local) ou **Cloud** (Gemini API, BYOK)
 - Classificação estruturada de lacunas: tipo, descrição, evidência, sugestão
 - Exportação de resultados para CSV e Excel
 
@@ -52,16 +50,16 @@ source venv/bin/activate  # No Windows: venv\Scripts\activate
 
 # Instale as dependências
 pip install -r requirements.txt
-
-# (Modo local) Baixe o modelo GGUF:
-mkdir -p models
-# Baixe qwen2.5-3b-instruct-q4_k_m.gguf de Qwen/Qwen2.5-3B-Instruct-GGUF no Hugging Face
-# e coloque em models/
 ```
 
 ### Executar Localmente
 
 ```bash
+# Modo Modal (requer endpoint Modal deployado)
+export MODAL_INFERENCE_URL="https://your-endpoint.modal.run"
+streamlit run app.py --server.port=7860
+
+# Modo Cloud (Gemini) não requer variável de ambiente
 streamlit run app.py --server.port=7860
 ```
 
@@ -69,10 +67,19 @@ Acesse: `http://localhost:7860`
 
 Para rodar os testes: `pytest tests/ -v`
 
+### Deploy do servidor Modal (inferência Qwen)
+
+```bash
+# Requer venv separado com modal instalado
+source ~/.venvs/modal-tools/bin/activate
+modal deploy modal_inference.py
+# Copie a URL gerada para MODAL_INFERENCE_URL
+```
+
 ## Uso
 
 1. Faça upload de um ou mais arquivos PDF de artigos científicos
-2. Escolha o modo de análise na barra lateral: **Local LLM** (requer GPU) ou **Cloud (Gemini)**
+2. Escolha o modo de análise na barra lateral: **Cloud (Gemini)** (recomendado, melhor qualidade) ou **Modal (Qwen 2.5-7B)** (sem chave necessária)
 3. Se Cloud, insira sua chave da API Gemini (obtenha gratuitamente em [Google AI Studio](https://aistudio.google.com/app/apikey))
 4. Clique em "Analyze Papers" — o sistema ingere o PDF, recupera contexto relevante e gera insights via LLM
 5. Cada lacuna identificada inclui: tipo, descrição, citação do texto e sugestão de pesquisa

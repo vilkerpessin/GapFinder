@@ -9,7 +9,7 @@ google-genai>=1.0.0
 langchain-community>=0.3,<0.4
 langchain-text-splitters>=0.3,<0.4
 chromadb
-llama-cpp-python
+requests
 sentence-transformers==5.2.2
 huggingface_hub
 
