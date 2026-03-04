@@ -40,7 +40,7 @@ class QwenModel:
         self._tokenizer = AutoTokenizer.from_pretrained(_MODEL_ID, cache_dir=_MODEL_CACHE)
         self._model = AutoModelForCausalLM.from_pretrained(
             _MODEL_ID,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             device_map="cuda",
             cache_dir=_MODEL_CACHE,
         )
@@ -50,7 +50,7 @@ class QwenModel:
         import torch
 
         messages = [
-            {"role": "system", "content": "You are a helpful assistant that outputs valid JSON."},
+            {"role": "system", "content": "You are an expert academic research reviewer. Identify distinct research gaps and return them as a JSON array."},
             {"role": "user", "content": request.prompt},
         ]
         text = self._tokenizer.apply_chat_template(
@@ -62,7 +62,8 @@ class QwenModel:
             outputs = self._model.generate(
                 **inputs,
                 max_new_tokens=request.max_new_tokens,
-                do_sample=False,
+                do_sample=True,
+                temperature=0.3,
                 pad_token_id=self._tokenizer.eos_token_id,
             )
 
