@@ -25,7 +25,12 @@ logger = logging.getLogger(__name__)
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
-RETRIEVAL_QUERIES = [
+_MODAL_QUERIES = [
+    "limitations future research shortcomings unanswered questions",
+    "methodological constraints data collection sample bias measurement issues",
+    "theoretical framework gaps conflicting findings unresolved debates",
+]
+_CLOUD_QUERIES = [
     "limitations, future research, shortcomings, unanswered questions",
 ]
 
@@ -109,8 +114,9 @@ class GapFinderAI:
         if self._vectorstore is None:
             raise RuntimeError("No PDF ingested. Call ingest_pdf() first.")
 
+        queries = _MODAL_QUERIES if self.mode == "modal" else _CLOUD_QUERIES
         retrieved = []
-        for query in RETRIEVAL_QUERIES:
+        for query in queries:
             results = self._vectorstore.similarity_search(query, k=top_k)
             retrieved.extend(results)
 
@@ -127,7 +133,7 @@ class GapFinderAI:
 
         chunks_text = "\n\n---\n\n".join(
             f"[Chunk {i+1}] (page {doc.metadata.get('page', '?')}):\n{doc.page_content}"
-            for i, doc in enumerate(unique_chunks[:top_k])
+            for i, doc in enumerate(unique_chunks[:top_k * len(queries)])
         )
 
         prompt = GAP_ANALYSIS_PROMPT.format(chunks=chunks_text)
