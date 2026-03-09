@@ -15,6 +15,10 @@ COPY . .
 ENV HF_HOME=/app/.cache/huggingface
 RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 
+# Prevent any runtime downloads to HF — model is already cached above
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
