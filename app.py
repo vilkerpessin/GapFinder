@@ -2,12 +2,15 @@
 
 import io
 import os
+import threading
 
 import pandas as pd
+import requests
 import streamlit as st
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from pdf_extractor import extract_metadata
-from rag_engine import GapFinderAI
+from rag_engine import EMBEDDING_MODEL, GapFinderAI
 
 st.set_page_config(page_title="GapFinder", page_icon="🔍", layout="wide")
 
@@ -17,6 +20,29 @@ GAP_TYPE_COLORS = {
     "Contextual": "blue",
     "Empirical": "green",
 }
+
+
+@st.cache_resource
+def _load_embeddings():
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+
+
+@st.cache_resource
+def _concurrency_state():
+    return {"count": 0, "lock": threading.Lock()}
+
+
+def _user_error_message(error: Exception, filename: str, action: str) -> str:
+    code = getattr(error, "code", None)
+    if code == 429:
+        return "API rate limit exceeded. Please wait a minute and try again."
+    if code == 403:
+        return "Invalid or expired API key. Please check your Gemini key."
+    if isinstance(error, requests.ConnectionError):
+        return f"Could not connect to the server. Please check your internet connection and try again."
+    if isinstance(error, requests.Timeout):
+        return f"Request timed out while trying to {action} {filename}. The server may be overloaded — try again later."
+    return f"Could not {action} {filename}. This may be due to API limits or server issues — wait a moment and try again, or switch analysis mode."
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -78,81 +104,90 @@ analyze_clicked = st.button(
     or not uploaded_files
     or (mode == "Cloud (Gemini)" and not api_key)
     or (mode == "Modal (Qwen 2.5-7B)" and not _modal_configured),
+    on_click=lambda: setattr(st.session_state, "analyzing", True),
 )
 
 if analyze_clicked:
-    st.session_state.analyzing = True
     engine_mode = "cloud" if mode == "Cloud (Gemini)" else "modal"
 
-    with st.spinner("Initializing model..."):
-        try:
-            engine = GapFinderAI(
-                mode=engine_mode,
-                api_key=api_key if engine_mode == "cloud" else None,
-            )
-        except (ValueError, FileNotFoundError) as e:
-            st.session_state.analyzing = False
-            st.error(str(e))
-            st.stop()
+    _state = _concurrency_state()
+    with _state["lock"]:
+        _state["count"] += 1
+        current_count = _state["count"]
 
-    all_results: dict[str, dict] = {}
-
-    for uploaded_file in uploaded_files:
-        pdf_bytes = uploaded_file.read()
-        filename = uploaded_file.name
-
-        with st.status(f"Analyzing: {filename}", expanded=True) as status:
-            st.write("Extracting metadata...")
-            try:
-                metadata = extract_metadata(io.BytesIO(pdf_bytes))
-            except Exception:
-                st.error(f"Could not read {filename}")
-                status.update(label=f"{filename}: failed", state="error")
-                continue
-
-            st.write("Ingesting PDF and building vector store...")
-            try:
-                num_chunks = engine.ingest_pdf(pdf_bytes, filename)
-            except Exception as e:
-                if getattr(e, "code", None) == 429:
-                    st.error("Google API rate limit exceeded. Please wait a minute and try again.")
-                else:
-                    st.error(f"Could not process {filename}. Please try again.")
-                status.update(label=f"{filename}: failed", state="error")
-                continue
-            if num_chunks == 0:
-                st.warning(f"No text extracted from {filename}")
-                status.update(label=f"{filename}: no text found", state="error")
-                continue
-
-            st.write(f"Retrieving context from {num_chunks} chunks...")
-            st.write("Generating insights with LLM...")
-            try:
-                gaps = engine.analyze_gaps(progress_callback=st.write)
-            except Exception as e:
-                if getattr(e, "code", None) == 429:
-                    st.error("Google API rate limit exceeded. Please wait a minute and try again.")
-                else:
-                    st.error(f"Analysis failed for {filename}. Please try again.")
-                status.update(label=f"{filename}: analysis error", state="error")
-                continue
-            finally:
-                engine.cleanup()
-
-            all_results[filename] = {
-                "metadata": metadata,
-                "gaps": gaps,
-            }
-            status.update(
-                label=f"{filename}: {len(gaps)} gap(s) found",
-                state="complete",
+    try:
+        if current_count > 1:
+            st.warning(
+                f"{current_count} analyses running simultaneously — "
+                "processing may be slower than usual."
             )
 
-    st.session_state.analyzing = False
+        with st.spinner("Initializing model..."):
+            try:
+                engine = GapFinderAI(
+                    mode=engine_mode,
+                    api_key=api_key if engine_mode == "cloud" else None,
+                    embeddings=_load_embeddings(),
+                )
+            except (ValueError, FileNotFoundError) as e:
+                st.error(str(e))
+                st.stop()
 
-    # Store results in session state for persistence across reruns
-    if all_results:
-        st.session_state["results"] = all_results
+        all_results: dict[str, dict] = {}
+
+        for uploaded_file in uploaded_files:
+            pdf_bytes = uploaded_file.read()
+            filename = uploaded_file.name
+
+            with st.status(f"Analyzing: {filename}", expanded=True) as status:
+                st.write("Extracting metadata...")
+                try:
+                    metadata = extract_metadata(io.BytesIO(pdf_bytes))
+                except Exception:
+                    st.error(f"Could not read {filename}")
+                    status.update(label=f"{filename}: failed", state="error")
+                    continue
+
+                st.write("Ingesting PDF and building vector store...")
+                try:
+                    num_chunks = engine.ingest_pdf(pdf_bytes, filename)
+                except Exception as e:
+                    st.error(_user_error_message(e, filename, "process"))
+                    status.update(label=f"{filename}: failed", state="error")
+                    continue
+                if num_chunks == 0:
+                    st.warning(f"No text extracted from {filename}")
+                    status.update(label=f"{filename}: no text found", state="error")
+                    continue
+
+                st.write(f"Retrieving context from {num_chunks} chunks...")
+                st.write("Generating insights with LLM...")
+                try:
+                    gaps = engine.analyze_gaps(progress_callback=st.write)
+                except Exception as e:
+                    st.error(_user_error_message(e, filename, "analyze"))
+                    status.update(label=f"{filename}: analysis error", state="error")
+                    continue
+                finally:
+                    engine.cleanup()
+
+                all_results[filename] = {
+                    "metadata": metadata,
+                    "gaps": gaps,
+                }
+                status.update(
+                    label=f"{filename}: {len(gaps)} gap(s) found",
+                    state="complete",
+                )
+
+        # Store results in session state for persistence across reruns
+        if all_results:
+            st.session_state["results"] = all_results
+
+    finally:
+        with _state["lock"]:
+            _state["count"] -= 1
+        st.session_state.analyzing = False
 
 
 # ── Results Display ──────────────────────────────────────────────────────────
