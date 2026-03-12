@@ -5,6 +5,7 @@ import os
 import threading
 
 import pandas as pd
+import requests
 import streamlit as st
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -29,6 +30,19 @@ def _load_embeddings():
 @st.cache_resource
 def _concurrency_state():
     return {"count": 0, "lock": threading.Lock()}
+
+
+def _user_error_message(error: Exception, filename: str, action: str) -> str:
+    code = getattr(error, "code", None)
+    if code == 429:
+        return "API rate limit exceeded. Please wait a minute and try again."
+    if code == 403:
+        return "Invalid or expired API key. Please check your Gemini key."
+    if isinstance(error, requests.ConnectionError):
+        return f"Could not connect to the server. Please check your internet connection and try again."
+    if isinstance(error, requests.Timeout):
+        return f"Request timed out while trying to {action} {filename}. The server may be overloaded — try again later."
+    return f"Could not {action} {filename}. This may be due to API limits or server issues — wait a moment and try again, or switch analysis mode."
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -138,10 +152,7 @@ if analyze_clicked:
                 try:
                     num_chunks = engine.ingest_pdf(pdf_bytes, filename)
                 except Exception as e:
-                    if getattr(e, "code", None) == 429:
-                        st.error("Google API rate limit exceeded. Please wait a minute and try again.")
-                    else:
-                        st.error(f"Could not process {filename}. Please try again.")
+                    st.error(_user_error_message(e, filename, "process"))
                     status.update(label=f"{filename}: failed", state="error")
                     continue
                 if num_chunks == 0:
@@ -154,10 +165,7 @@ if analyze_clicked:
                 try:
                     gaps = engine.analyze_gaps(progress_callback=st.write)
                 except Exception as e:
-                    if getattr(e, "code", None) == 429:
-                        st.error("Google API rate limit exceeded. Please wait a minute and try again.")
-                    else:
-                        st.error(f"Analysis failed for {filename}. Please try again.")
+                    st.error(_user_error_message(e, filename, "analyze"))
                     status.update(label=f"{filename}: analysis error", state="error")
                     continue
                 finally:
