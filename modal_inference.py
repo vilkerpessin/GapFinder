@@ -30,6 +30,7 @@ class _InferenceRequest(BaseModel):
     volumes={_MODEL_CACHE: _MODEL_VOLUME},
     timeout=300,
     scaledown_window=60,
+    max_containers=5,
 )
 class QwenModel:
     @modal.enter()

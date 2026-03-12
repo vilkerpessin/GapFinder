@@ -12,8 +12,8 @@ from typing import Callable
 import requests
 
 from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from google import genai
@@ -54,14 +54,14 @@ Text chunks:
 class GapFinderAI:
     """RAG-based research gap detector using Modal (Qwen 2.5-7B) or Gemini."""
 
-    def __init__(self, mode: str = "modal", api_key: str | None = None):
+    def __init__(self, mode: str = "modal", api_key: str | None = None, embeddings=None):
         if mode not in ("modal", "cloud"):
             raise ValueError(f"Invalid mode: {mode!r}. Use 'modal' or 'cloud'.")
         if mode == "cloud" and not api_key:
             raise ValueError("Cloud mode requires a Gemini API key.")
 
         self.mode = mode
-        self._embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        self._embeddings = embeddings or HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         self._vectorstore: Chroma | None = None
 
         if mode == "modal":
