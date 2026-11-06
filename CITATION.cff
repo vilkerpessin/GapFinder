@@ -27,6 +27,7 @@ repository-code: "https://github.com/vilkerpessin/GapFinder"
 url: "https://huggingface.co/spaces/GapFinder/GapFinder"
 license: MIT
 version: "1.0.0"
+doi: "10.5281/zenodo.24013136"
 date-released: "2026-11-06"
 keywords:
   - research gaps
