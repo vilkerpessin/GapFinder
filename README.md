@@ -11,8 +11,7 @@ app_port: 7860
 
 O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial desenvolvido por **Vilker Zucolotto Pessin** como parte de sua pesquisa de doutorado, com o objetivo de auxiliar pesquisadores na identificação de lacunas científicas em artigos acadêmicos.
 
-**Demo online:** https://huggingface.co/spaces/dmgobbi/GapFinder
-
+**Demo online:** https://huggingface.co/spaces/GapFinder/GapFinder
 **Artigo científico:** https://www.scholink.org/ojs/index.php/selt/article/view/55751
 
 ## Stack Tecnológico
@@ -88,7 +87,7 @@ modal deploy modal_inference.py
 ## Autor
 
 - Nome: Vilker Zucolotto Pessin
-- E-mail: vilker.pessin@gmail.com
+- E-mail: vilkerpessin@gmail.com
 
 
 ## Contribuindo
