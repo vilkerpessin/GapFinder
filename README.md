@@ -1,6 +1,5 @@
 ---
 title: GapFinder
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24013135.svg)](https://doi.org/10.5281/zenodo.24013135)
 emoji: 🔍
 colorFrom: blue
 colorTo: green
@@ -9,6 +8,7 @@ app_port: 7860
 ---
 
 # GapFinder
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24013135.svg)](https://doi.org/10.5281/zenodo.24013135)
 
 O **GapFinder** é um MVP (Minimum Viable Product) de Inteligência Artificial desenvolvido por **Vilker Zucolotto Pessin** como parte de sua pesquisa de doutorado, com o objetivo de auxiliar pesquisadores na identificação de lacunas científicas em artigos acadêmicos.
 
