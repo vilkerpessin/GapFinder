@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use GapFinder in your research, please cite it using the metadata below."
+type: software
+title: "GapFinder: AI-assisted identification of research gaps in scientific articles"
+abstract: >-
+  GapFinder is an open-source tool that supports researchers in identifying
+  research gaps in scientific articles. It uses a retrieval-augmented generation
+  (RAG) pipeline: text is extracted from PDF files, segmented, semantically
+  retrieved and analysed by a large language model (Qwen 2.5-7B-Instruct or
+  Gemini 2.5 Flash Lite). Each candidate gap is classified as theoretical,
+  methodological, empirical or contextual, and reported with a description,
+  the verbatim textual evidence from the article and a research suggestion.
+  GapFinder was developed as part of doctoral research at the Federal
+  University of Espírito Santo (UFES), Brazil, and operationalises the gap
+  identification step of the Augmented Research Intelligence (ARI) method.
+authors:
+  - family-names: Pessin
+    given-names: Vilker Zucolotto
+    email: vilker.pessin@gmail.com
+    affiliation: "Federal University of Espírito Santo (UFES), Brazil"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+  - family-names: Gobbi
+    given-names: Daniel Melhem
+    # affiliation: ""
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+repository-code: "https://github.com/vilkerpessin/GapFinder"
+url: "https://huggingface.co/spaces/GapFinder/GapFinder"
+license: MIT
+version: "1.0.0"
+date-released: "2026-11-06"
+keywords:
+  - research gaps
+  - science mapping
+  - large language models
+  - retrieval-augmented generation
+  - research methods
+  - AI-assisted research
+  - open science
